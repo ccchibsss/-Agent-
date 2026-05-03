@@ -7,7 +7,6 @@ from enum import Enum, auto
 
 
 class NodeType(Enum):
-    """Типы узлов workflow"""
     GOOGLE_SHEETS_READ = "google_sheets_read"
     GOOGLE_SHEETS_WRITE = "google_sheets_write"
     EXCEL_READ = "excel_read"
@@ -29,7 +28,6 @@ class NodeType(Enum):
 
 
 class ConditionType(Enum):
-    """Типы условий для парсинга"""
     GREATER = "greater"
     LESS = "less"
     EQUAL = "equal"
@@ -46,14 +44,12 @@ class ConditionType(Enum):
 
 
 class MemoryImportance(Enum):
-    """Уровни важности памяти агента"""
     LOW = "low"
     NORMAL = "normal"
     HIGH = "high"
 
 
 class WorkflowStatus(Enum):
-    """Статусы выполнения workflow"""
     PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
@@ -62,7 +58,6 @@ class WorkflowStatus(Enum):
 
 
 class ImageEditOperation(Enum):
-    """Операции редактирования изображений"""
     REMOVE_BACKGROUND = "remove_background"
     REMOVE_WATERMARK = "remove_watermark"
     RESIZE = "resize"
@@ -77,37 +72,29 @@ class ImageEditOperation(Enum):
 
 @dataclass
 class AppConfig:
-    """Глобальная конфигурация приложения"""
     APP_TITLE: str = "Workflow Builder Pro -- Голосовой помощник"
     APP_ICON: str = "🧠"
     APP_VERSION: str = "9.3.0"
     
-    # API настройки
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
     DEEPSEEK_MODEL: str = "deepseek-chat"
     API_TIMEOUT: int = 120
     MAX_TOKENS: int = 4096
     
-    # Настройки таблиц
     MAX_ROWS_GOOGLE: int = 10000
     MAX_ROWS_EXCEL: int = 100000
     SUPPORTED_EXCEL_FORMATS: Tuple[str, ...] = ("xlsx", "xlsm", "xls")
     DEFAULT_SHEET_NAME: str = "Sheet1"
     
-    # Настройки изображений
     MAX_IMAGE_UPLOAD: int = 10000
     SUPPORTED_IMAGE_FORMATS: Tuple[str, ...] = ("jpg", "jpeg", "png", "webp", "bmp", "gif")
     MAX_IMAGE_SIZE_MB: int = 50
     
-    # Настройки кэширования
     CACHE_TTL_SECONDS: int = 300
-    
-    # Настройки интерфейса
     DEFAULT_LANGUAGE: str = "ru"
     MOBILE_BREAKPOINT: int = 768
     ITEMS_PER_PAGE: int = 10
     
-    # Цветовая схема
     COLORS: Dict[str, str] = field(default_factory=lambda: {
         'primary': '#6974dc',
         'primary_dark': '#764ba2',
