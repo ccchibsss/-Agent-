@@ -47,27 +47,37 @@ def main():
     # Боковая панель возвращает API-ключ
     api_key = render_sidebar()
 
-    # --- ИНИЦИАЛИЗАЦИЯ МЕНЕДЖЕРОВ с ПРОВЕРКОЙ НАЛИЧИЯ В session_state ---
+    # --- ИНИЦИАЛИЗАЦИЯ МЕНЕДЖЕРОВ ---
     # TableManager
     if "table_manager" not in st.session_state:
         st.session_state.table_manager = TableManager(api_key)
-    elif st.session_state.table_manager.api_key != api_key:
-        st.session_state.table_manager.api_key = api_key
-        logger.info("API ключ обновлён в TableManager")
+    else:
+        # Если объект существует, обновляем api_key (если есть атрибут)
+        if hasattr(st.session_state.table_manager, 'api_key'):
+            if st.session_state.table_manager.api_key != api_key:
+                st.session_state.table_manager.api_key = api_key
+                logger.info("API ключ обновлён в TableManager")
+        else:
+            # Старая версия без api_key – пересоздаём
+            st.session_state.table_manager = TableManager(api_key)
 
     # ImageManager
     if "image_manager" not in st.session_state:
         st.session_state.image_manager = ImageManager(api_key)
-    elif st.session_state.image_manager.api_key != api_key:
-        st.session_state.image_manager.api_key = api_key
+    else:
+        if hasattr(st.session_state.image_manager, 'api_key'):
+            if st.session_state.image_manager.api_key != api_key:
+                st.session_state.image_manager.api_key = api_key
+        else:
+            st.session_state.image_manager = ImageManager(api_key)
 
-    # AgentManager (не требует api_key в конструкторе, но может использовать позже)
+    # AgentManager
     if "agent_manager" not in st.session_state:
         st.session_state.agent_manager = AgentManager()
 
     agent_manager = st.session_state.agent_manager
 
-    # Проверка наличия метода (на случай устаревшей версии table_manager)
+    # Проверка наличия метода ai_edit_excel_file (профилактика)
     if not hasattr(st.session_state.table_manager, 'ai_edit_excel_file'):
         st.error("❌ Ошибка: в TableManager отсутствует метод ai_edit_excel_file. Обновите table_manager.py")
         st.stop()
