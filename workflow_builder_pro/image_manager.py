@@ -1,7 +1,6 @@
 """
 Менеджер для массовой обработки изображений с ИИ.
-Добавлен метод apply_ai_edits – выполняет цепочку операций,
-предложенных ИИ на основе текстового описания.
+API‑ключ передаётся непосредственно в методы, работающие с ИИ.
 """
 import streamlit as st
 import numpy as np
@@ -20,10 +19,11 @@ logger = logging.getLogger(__name__)
 
 class ImageManager:
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key
+        self.api_key = api_key                # может быть None, тогда методы требуют явный ключ
         self.processed_count = 0
         self.total_count = 0
 
+    # ---------- простые операции (без API) ----------
     def remove_background(self, image: Image.Image) -> Image.Image:
         try:
             from rembg import remove
@@ -134,12 +134,15 @@ class ImageManager:
             return image.convert('RGB')
         return image
 
-    def ai_edit_image(self, image: Image.Image, instruction: str) -> Dict[str, Any]:
-        """Возвращает JSON с предложенными операциями (не выполняет их)."""
-        if not self.api_key:
+    # ---------- ИИ‑операции ----------
+    def ai_edit_image(self, image: Image.Image, instruction: str,
+                      api_key: Optional[str] = None) -> Dict[str, Any]:
+        """Возвращает план операций от ИИ (не выполняет их)."""
+        key = api_key or self.api_key
+        if not key:
             return {'error': 'API ключ не указан'}
         try:
-            client = OpenAI(api_key=self.api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
+            client = OpenAI(api_key=key, base_url=CONFIG.DEEPSEEK_BASE_URL)
             img_base64 = image_to_base64(image)
             prompt = f"""
 Ты эксперт по редактированию изображений.
@@ -164,12 +167,13 @@ class ImageManager:
         except Exception as e:
             return {'error': f'Ошибка ИИ: {str(e)}'}
 
-    def apply_ai_edits(self, image: Image.Image, instruction: str) -> Image.Image:
+    def apply_ai_edits(self, image: Image.Image, instruction: str,
+                       api_key: Optional[str] = None) -> Image.Image:
         """
         Получает инструкцию, отправляет ИИ, получает набор операций и
         последовательно применяет их к изображению.
         """
-        plan = self.ai_edit_image(image, instruction)
+        plan = self.ai_edit_image(image, instruction, api_key=api_key)
         if 'error' in plan:
             raise RuntimeError(plan['error'])
         operations = plan.get('operations', [])
@@ -197,6 +201,30 @@ class ImageManager:
                     progress_callback(self.processed_count, self.total_count, filename)
             except Exception as e:
                 logger.error(f"Ошибка обработки {filename}: {e}")
+                results.append((filename, None))
+        return results
+
+    def batch_ai_edit(self, images: List[Tuple[str, Image.Image]],
+                      instruction: str, api_key: Optional[str] = None,
+                      progress_callback: Optional[Callable] = None) -> List[Tuple[str, Image.Image]]:
+        """
+        Применяет ИИ‑инструкцию ко всем изображениям.
+        """
+        key = api_key or self.api_key
+        if not key:
+            raise RuntimeError("API ключ не указан")
+        self.total_count = len(images)
+        self.processed_count = 0
+        results = []
+        for filename, image in images:
+            try:
+                processed = self.apply_ai_edits(image, instruction, api_key=key)
+                results.append((filename, processed))
+                self.processed_count += 1
+                if progress_callback:
+                    progress_callback(self.processed_count, self.total_count, filename)
+            except Exception as e:
+                logger.error(f"Ошибка ИИ‑обработки {filename}: {e}")
                 results.append((filename, None))
         return results
 
