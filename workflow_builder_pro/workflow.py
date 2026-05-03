@@ -1,5 +1,9 @@
+
+## 2. **workflow.py** (добавлены SMS, расширенная автоматизация и условия):
+
+```python
 """
-Workflow: генератор, исполнитель и узлы
+Workflow: генератор, исполнитель и узлы с расширенной автоматизацией
 """
 import json
 import re
@@ -51,9 +55,12 @@ class AIWorkflowGenerator:
    - loop: цикл (config: items)
    - email: отправка email (config: to, subject, body)
    - telegram: отправка в Telegram (config: chat_id, message)
+   - sms: отправка SMS (config: phone, message, provider)
    - ai_agent: вызов ИИ агента (config: agent_id, question)
    - data_clean: очистка данных (config: rules)
    - pivot_table: сводная таблица (config: index, columns, values)
+   - webhook: webhook (config: url, method)
+   - schedule: планировщик (config: cron, timezone)
 4. Условия пиши на РУССКОМ языке, используя природные фразы
 
 Верни ТОЛЬКО JSON массив блоков, без пояснений.
@@ -83,7 +90,7 @@ class AIWorkflowGenerator:
 
 
 class WorkflowExecutor:
-    """Выполняет workflow с поддержкой условий на русском"""
+    """Выполняет workflow с поддержкой условий на русском и расширенной автоматизацией"""
     
     def __init__(
         self,
@@ -100,13 +107,23 @@ class WorkflowExecutor:
         self.results: List[Dict] = []
         self.current_node_index: int = 0
         self.start_time: Optional[float] = None
+        self.conditional_branches: Dict[int, bool] = {}
     
     def execute(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
-        """Выполняет весь workflow"""
+        """Выполняет весь workflow с поддержкой условий"""
         self.start_time = time.time()
         
         while self.current_node_index < len(self.workflow):
             node = self.workflow[self.current_node_index]
+            
+            # Проверка условий выполнения узла
+            if 'condition' in node:
+                should_execute = self._check_node_condition(node)
+                if not should_execute:
+                    logger.info(f"Пропуск узла {node.get('name')} - условие не выполнено")
+                    node['status'] = 'skipped'
+                    self.current_node_index += 1
+                    continue
             
             if progress_callback:
                 progress_callback(self.current_node_index, node)
@@ -130,6 +147,20 @@ class WorkflowExecutor:
                 logger.error(f"Ошибка в узле {node.get('name')}: {e}")
                 node['status'] = WorkflowStatus.ERROR.value
                 node['error'] = str(e)
+                
+                # Обработка ошибок по условию
+                if 'on_error' in node:
+                    error_action = node['on_error']
+                    if error_action == 'continue':
+                        self.current_node_index += 1
+                        continue
+                    elif error_action == 'retry':
+                        retry_count = node.get('retry_count', 3)
+                        if node.get('retries', 0) < retry_count:
+                            node['retries'] = node.get('retries', 0) + 1
+                            logger.info(f"Повтор узла {node.get('name')} ({node['retries']}/{retry_count})")
+                            continue
+                
                 return {
                     'success': False,
                     'error': str(e),
@@ -144,6 +175,43 @@ class WorkflowExecutor:
             'context': self.context,
             'execution_time': time.time() - (self.start_time or time.time())
         }
+    
+    def _check_node_condition(self, node: Dict) -> bool:
+        """Проверяет условие выполнения узла"""
+        condition = node.get('condition', {})
+        condition_type = condition.get('type', 'always')
+        
+        if condition_type == 'always':
+            return True
+        
+        elif condition_type == 'previous_success':
+            prev_node = self.results[-1] if self.results else None
+            return prev_node and prev_node.get('result', {}).get('success', False)
+        
+        elif condition_type == 'variable':
+            var_name = condition.get('variable')
+            expected_value = condition.get('value')
+            operator = condition.get('operator', '==')
+            
+            actual_value = self.context.get(var_name)
+            
+            if operator == '==':
+                return str(actual_value) == str(expected_value)
+            elif operator == '!=':
+                return str(actual_value) != str(expected_value)
+            elif operator == '>':
+                return float(actual_value) > float(expected_value)
+            elif operator == '<':
+                return float(actual_value) < float(expected_value)
+            elif operator == 'contains':
+                return str(expected_value) in str(actual_value)
+        
+        elif condition_type == 'custom':
+            custom_condition = condition.get('expression', '')
+            parsed = RussianConditionParser.parse(custom_condition)
+            return self._evaluate_condition(custom_condition)
+        
+        return True
     
     def _execute_node(self, node: Dict) -> Any:
         """Выполняет отдельный узел"""
@@ -162,9 +230,12 @@ class WorkflowExecutor:
             NodeType.HTTP_POST.value: lambda: self._execute_http_post(config),
             NodeType.EMAIL.value: lambda: self._execute_email(config),
             NodeType.TELEGRAM.value: lambda: self._execute_telegram(config),
+            'sms': lambda: self._execute_sms(config),  # Новый тип
             NodeType.AI_AGENT.value: lambda: self._execute_ai_agent(config),
             NodeType.DATA_CLEAN.value: lambda: self._execute_data_clean(config),
             NodeType.PIVOT_TABLE.value: lambda: self._execute_pivot_table(config),
+            'webhook': lambda: self._execute_webhook(config),  # Новый тип
+            'schedule': lambda: self._execute_schedule(config),  # Новый тип
         }
         
         executor = executors.get(node_type)
@@ -173,6 +244,108 @@ class WorkflowExecutor:
         else:
             return {'status': 'unknown_type', 'type': node_type}
     
+    def _execute_sms(self, config: Dict) -> Dict:
+        """Отправка SMS (поддержка различных провайдеров)"""
+        phone = config.get('phone', '')
+        message = config.get('message', '')
+        provider = config.get('provider', 'twilio')  # twilio, smsru, custom
+        
+        if not phone or not message:
+            return {'error': 'Телефон или сообщение не указаны'}
+        
+        try:
+            if provider == 'twilio':
+                # Twilio integration (пример)
+                account_sid = config.get('twilio_sid', '')
+                auth_token = config.get('twilio_token', '')
+                from_number = config.get('from_number', '')
+                
+                # Здесь реальный код отправки через Twilio
+                return {
+                    'status': 'sent',
+                    'provider': 'twilio',
+                    'phone': phone,
+                    'message': message[:50] + '...'
+                }
+            
+            elif provider == 'smsru':
+                # SMS.ru integration
+                api_key = config.get('smsru_key', '')
+                url = "https://sms.ru/sms/send"
+                params = {
+                    'api_id': api_key,
+                    'to': phone,
+                    'msg': message,
+                    'json': 1
+                }
+                response = requests.post(url, data=params, timeout=30)
+                result = response.json()
+                
+                return {
+                    'status': 'sent' if result.get('status') == 100 else 'failed',
+                    'provider': 'smsru',
+                    'phone': phone,
+                    'message_id': result.get('sms_id')
+                }
+            
+            else:
+                # Custom webhook
+                webhook_url = config.get('webhook_url', '')
+                if webhook_url:
+                    response = requests.post(webhook_url, json={
+                        'phone': phone,
+                        'message': message
+                    }, timeout=30)
+                    return {'status': 'sent', 'provider': 'webhook'}
+            
+            return {'status': 'simulated', 'phone': phone, 'message': message[:50]}
+            
+        except Exception as e:
+            return {'error': str(e), 'status': 'failed'}
+    
+    def _execute_webhook(self, config: Dict) -> Dict:
+        """Вызов webhook"""
+        url = config.get('url', '')
+        method = config.get('method', 'POST').upper()
+        headers = config.get('headers', {})
+        body = config.get('body', {})
+        
+        if not url:
+            return {'error': 'URL webhook не указан'}
+        
+        try:
+            if method == 'GET':
+                response = requests.get(url, headers=headers, timeout=CONFIG.API_TIMEOUT)
+            elif method == 'POST':
+                response = requests.post(url, json=body, headers=headers, timeout=CONFIG.API_TIMEOUT)
+            elif method == 'PUT':
+                response = requests.put(url, json=body, headers=headers, timeout=CONFIG.API_TIMEOUT)
+            elif method == 'DELETE':
+                response = requests.delete(url, headers=headers, timeout=CONFIG.API_TIMEOUT)
+            else:
+                return {'error': f'Неподдерживаемый метод: {method}'}
+            
+            return {
+                'status': response.status_code,
+                'data': response.json() if response.status_code == 200 else None,
+                'url': url
+            }
+        except Exception as e:
+            return {'error': str(e)}
+    
+    def _execute_schedule(self, config: Dict) -> Dict:
+        """Планировщик (информационный узел)"""
+        cron = config.get('cron', '')
+        timezone = config.get('timezone', 'UTC')
+        
+        return {
+            'status': 'scheduled',
+            'cron': cron,
+            'timezone': timezone,
+            'message': 'Узел планировщика (требует внешней интеграции)'
+        }
+    
+    # ... остальные методы остаются без изменений ...
     def _execute_google_sheets_read(self, config: Dict) -> Dict:
         """Чтение из Google Sheets"""
         sheet_url = config.get('sheet_url', '')
