@@ -1,4 +1,4 @@
-# ui_components.py - Все UI компоненты для Streamlit (ПОЛНАЯ ВЕРСИЯ)
+# ui_components.py - Все UI компоненты для Streamlit (ПОЛНАЯ ВЕРСИЯ С ИИ-РЕДАКТИРОВАНИЕМ EXCEL)
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -386,9 +386,64 @@ def render_conditions_tab():
 
 
 def render_tables_tab(api_key):
-    """Рендерит вкладку таблиц"""
+    """Рендерит вкладку таблиц + быстрое ИИ-редактирование Excel"""
     st.subheader("🗂 Таблицы + ИИ + Редактор")
     
+    # ---------- НОВЫЙ БЛОК: БЫСТРОЕ ИИ-РЕДАКТИРОВАНИЕ EXCEL ----------
+    st.markdown("## 🤖 Быстрое ИИ-редактирование Excel")
+    st.markdown("Загрузите файл → опишите изменения на русском → скачайте результат")
+    
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        uploaded_excel = st.file_uploader(
+            "📂 Выберите Excel файл",
+            type=['xlsx', 'xls', 'csv'],
+            key="ai_upload_excel",
+            help="Поддерживаются .xlsx, .xls, .csv"
+        )
+    with col2:
+        ai_instruction = st.text_area(
+            "✏️ Инструкция для ИИ",
+            height=120,
+            placeholder="Примеры:\n- удалить пустые строки\n- создать столбец 'Итого' = Цена * Количество\n- отсортировать по дате\n- заменить все пропуски на 0\n- отфильтровать строки, где Статус = 'Активен'",
+            key="ai_instruction_quick"
+        )
+        run_ai = st.button("🚀 Применить ИИ", type="primary", use_container_width=True, key="run_ai_excel")
+    
+    if uploaded_excel and run_ai:
+        if not api_key:
+            st.error("❌ Введите API ключ DeepSeek в боковой панели")
+        elif not ai_instruction.strip():
+            st.warning("⚠️ Введите инструкцию для ИИ")
+        else:
+            with st.spinner("🧠 ИИ анализирует и применяет изменения..."):
+                result = st.session_state.table_manager.ai_edit_excel_file(
+                    input_file=uploaded_excel,
+                    instruction=ai_instruction,
+                    api_key=api_key,
+                    sheet_name=0
+                )
+            if result['success']:
+                st.success(result['message'])
+                if result['transformations_applied']:
+                    st.markdown("**🔧 Выполненные операции:**")
+                    for desc in result['transformations_applied']:
+                        st.markdown(f"- {desc}")
+                st.markdown("### 👁️ Превью результата (первые 10 строк)")
+                st.dataframe(result['df'].head(10), use_container_width=True)
+                st.download_button(
+                    label="📥 Скачать исправленный Excel",
+                    data=result['output_bytes'],
+                    file_name=f"fixed_{uploaded_excel.name}",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            else:
+                st.error(f"❌ {result['error']}")
+    
+    st.markdown("---")
+    
+    # ----- ОСТАЛЬНОЙ ФУНКЦИОНАЛ (СОХРАНЁННЫЕ ТАБЛИЦЫ, ЗАГРУЗКА, РЕДАКТОР) -----
     with st.expander("📚 Сохранённые таблицы"):
         if not st.session_state.saved_tables:
             st.info("💡 Нет сохранённых таблиц")
