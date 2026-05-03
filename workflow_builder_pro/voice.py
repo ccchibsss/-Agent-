@@ -6,7 +6,6 @@ from typing import Optional
 
 from utils import logger
 
-# Голосовые библиотеки
 try:
     import speech_recognition as sr
     from gtts import gTTS
@@ -18,10 +17,8 @@ except ImportError:
 
 
 def recognize_speech_from_audio(audio_bytes: bytes) -> Optional[str]:
-    """Распознавание русской речи из аудиобайтов"""
     if not VOICE_SUPPORT or sr is None:
         return None
-    
     recognizer = sr.Recognizer()
     try:
         audio_file = BytesIO(audio_bytes)
@@ -34,10 +31,8 @@ def recognize_speech_from_audio(audio_bytes: bytes) -> Optional[str]:
 
 
 def text_to_speech_mp3(text: str) -> Optional[bytes]:
-    """Генерация MP3 из текста (русский язык)"""
     if not VOICE_SUPPORT or gTTS is None:
         return None
-    
     try:
         tts = gTTS(text=text, lang="ru", slow=False)
         fp = BytesIO()
