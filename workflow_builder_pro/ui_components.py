@@ -372,24 +372,21 @@ def render_tables_tab(api_key: str):
                             st.success(f"✅ Загружено: {df.shape}")
                             st.rerun()
         else:
-            uploaded = st.file_uploader("Excel файл", type=['xlsx','xls','csv'], key="excel_upload")
+            uploaded = st.file_uploader("Excel или CSV", type=['xlsx','xls','csv'], key="excel_upload")
             if uploaded:
                 with st.spinner("Чтение..."):
-                    try:
-                        if uploaded.name.endswith('.csv'):
-                            df = pd.read_csv(uploaded)
-                        else:
-                            df = table_manager.read_excel(uploaded)
-                        if df is not None:
-                            tid = f"ex_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                            st.session_state.current_df = df
-                            st.session_state.editing_table_id = tid
-                            st.session_state.saved_tables[tid] = df.copy()
-                            save_tables_auto(st.session_state.saved_tables)
-                            st.success(f"✅ Загружено: {df.shape}")
-                            st.rerun()
-                    except Exception as e:
-                        st.error(f"❌ Ошибка: {e}")
+                    if uploaded.name.endswith('.csv'):
+                        df = pd.read_csv(uploaded)
+                    else:
+                        df = table_manager.read_excel(uploaded)
+                    if df is not None:
+                        tid = f"ex_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        st.session_state.current_df = df
+                        st.session_state.editing_table_id = tid
+                        st.session_state.saved_tables[tid] = df.copy()
+                        save_tables_auto(st.session_state.saved_tables)
+                        st.success(f"✅ Загружено: {df.shape}")
+                        st.rerun()
     with col_right:
         if st.session_state.current_df is not None and st.session_state.editing_table_id:
             st.markdown('<div class="table-editor">', unsafe_allow_html=True)
