@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 def recognize_speech_from_audio(audio_bytes: bytes) -> Optional[str]:
-    """Распознавание русской речи из аудиобайтов"""
     try:
         import speech_recognition as sr
     except ImportError:
@@ -28,7 +27,6 @@ def recognize_speech_from_audio(audio_bytes: bytes) -> Optional[str]:
 
 
 def text_to_speech_mp3(text: str) -> Optional[bytes]:
-    """Генерация MP3 из текста (русский язык)"""
     try:
         from gtts import gTTS
     except ImportError:
