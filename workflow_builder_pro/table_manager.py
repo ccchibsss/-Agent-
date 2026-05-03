@@ -10,14 +10,14 @@ from typing import Dict, List, Any, Optional, Union, Tuple
 from datetime import datetime
 from openai import OpenAI
 
-# Импорты из вашего проекта (предполагается, что они есть)
+# Импорты из вашего проекта
 from config import CONFIG
 from utils import handle_errors, cache_result, logger
 
 # Проверка поддержки Excel
 try:
     import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     EXCEL_SUPPORT = True
 except ImportError:
     EXCEL_SUPPORT = False
@@ -231,8 +231,8 @@ class TableManager:
         exec(transformation_code, safe_globals, safe_globals)
         return safe_globals.get('df', df)
     
-    # ================== НОВЫЙ МЕТОД ==================
-        @handle_errors(default_return=None)
+    # ================== ИСПРАВЛЕННЫЙ МЕТОД (правильные отступы) ==================
+    @handle_errors(default_return=None)
     def ai_edit_excel_file(
         self,
         input_file: Union[str, BytesIO],
@@ -240,41 +240,77 @@ class TableManager:
         api_key: str,
         sheet_name: Union[str, int] = 0
     ) -> Dict[str, Any]:
+        """
+        Расширенное ИИ-редактирование Excel файла с поддержкой сложных операций
+        """
         result = {
             'success': False,
             'df': None,
             'output_bytes': None,
             'transformations_applied': [],
             'message': '',
-            'error': None
+            'error': None,
+            'ai_suggestions': []
         }
-        df = self.read_excel(input_file, sheet_name=sheet_name, use_cache=False)
-        if df is None:
-            result['error'] = "Не удалось прочитать Excel файл"
-            return result
-        ai_res = self.ai_analyze_dataframe(df, instruction, api_key)
-        if 'error' in ai_res:
-            result['error'] = f"Ошибка ИИ: {ai_res['error']}"
-            return result
-        current_df = df.copy()
-        applied = []
-        for trans in ai_res.get('transformations', []):
-            code = trans.get('code')
-            if not code:
-                continue
-            try:
-                current_df = self.execute_transformation(current_df, code)
-                applied.append(trans.get('description', code[:50]))
-            except Exception as e:
-                result['error'] = f"Ошибка выполнения: {e}"
+        
+        try:
+            # Чтение файла
+            df = self.read_excel(input_file, sheet_name=sheet_name, use_cache=False)
+            if df is None:
+                result['error'] = "Не удалось прочитать Excel файл"
                 return result
-        result['df'] = current_df
-        result['transformations_applied'] = applied
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            current_df.to_excel(writer, sheet_name='Sheet1', index=False)
-        output.seek(0)
-        result['output_bytes'] = output
-        result['success'] = True
-        result['message'] = f"✅ Применено {len(applied)} изменений"
-        return result
+            
+            # Анализ через ИИ
+            ai_res = self.ai_analyze_dataframe(df, instruction, api_key)
+            if 'error' in ai_res:
+                result['error'] = f"Ошибка ИИ: {ai_res['error']}"
+                return result
+            
+            # Применение трансформаций
+            current_df = df.copy()
+            applied = []
+            
+            for trans in ai_res.get('transformations', []):
+                code = trans.get('code')
+                if not code:
+                    continue
+                try:
+                    current_df = self.execute_transformation(current_df, code)
+                    applied.append(trans.get('description', code[:50]))
+                except Exception as e:
+                    result['error'] = f"Ошибка выполнения трансформации: {e}"
+                    return result
+            
+            result['df'] = current_df
+            result['transformations_applied'] = applied
+            
+            # Сохранение в BytesIO
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                current_df.to_excel(writer, sheet_name='Sheet1', index=False)
+            output.seek(0)
+            
+            result['output_bytes'] = output
+            result['success'] = True
+            result['message'] = f"✅ Применено {len(applied)} изменений"
+            result['ai_suggestions'] = ai_res.get('recommendations', [])
+            
+            return result
+            
+        except Exception as e:
+            result['error'] = f"Критическая ошибка: {str(e)}"
+            return result
+    
+    def ai_smart_filter(self, df: pd.DataFrame, filter_description: str, api_key: str) -> pd.DataFrame:
+        """Умная фильтрация данных через ИИ"""
+        if not api_key:
+            return df
+        
+        client = OpenAI(api_key=api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
+        prompt = f"""
+Данные: {df.head().to_dict()}
+Задача фильтрации: {filter_description}
+
+Верни Python код для pandas фильтрации в формате:
+```python
+df = df[условие]
