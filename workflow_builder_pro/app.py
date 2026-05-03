@@ -1,6 +1,6 @@
 """
 Workflow Builder Pro – Главный модуль приложения
-Версия: 9.3.0 (с быстрым ИИ-редактированием Excel)
+Версия: 9.3.1 (Исправлена безопасная инициализация)
 """
 import streamlit as st
 from datetime import datetime
@@ -36,7 +36,7 @@ def main():
     )
     st.markdown(get_app_styles(), unsafe_allow_html=True)
 
-    # Инициализация session_state (создаёт все нужные переменные)
+    # Инициализация session_state (создаёт все нужные переменные, в т.ч. пустые менеджеры)
     initialize_session_state()
 
     # Заголовок
@@ -51,38 +51,43 @@ def main():
     # Боковая панель (рендерится отдельно, возвращает api_key)
     api_key = render_sidebar()
 
-    # --- ИНИЦИАЛИЗАЦИЯ МЕНЕДЖЕРОВ С ОБНОВЛЕНИЕМ API-КЛЮЧА ---
-    # TableManager
-    if "table_manager" not in st.session_state:
+    # --- ИНИЦИАЛИЗАЦИЯ МЕНЕДЖЕРОВ С БЕЗОПАСНОЙ ПРОВЕРКОЙ ---
+    
+    # 1. TableManager
+    current_tm = st.session_state.get("table_manager")
+    if current_tm is None:
         st.session_state.table_manager = TableManager(api_key)
     else:
-        # Если ключ изменился – обновляем его в менеджере
-        if st.session_state.table_manager.api_key != api_key:
-            st.session_state.table_manager.api_key = api_key
+        # Безопасная проверка: если менеджер существует, обновляем ключ (если он изменился)
+        # используем getattr, чтобы избежать ошибки, если объект битый
+        if getattr(current_tm, 'api_key', None) != api_key:
+            current_tm.api_key = api_key
             logger.info("API ключ обновлён в TableManager")
 
-    # ImageManager
-    if "image_manager" not in st.session_state:
+    # 2. ImageManager
+    current_im = st.session_state.get("image_manager")
+    if current_im is None:
         st.session_state.image_manager = ImageManager(api_key)
     else:
-        if st.session_state.image_manager.api_key != api_key:
-            st.session_state.image_manager.api_key = api_key
+        if getattr(current_im, 'api_key', None) != api_key:
+            current_im.api_key = api_key
 
-    # AgentManager (в его конструкторе api_key не требуется)
-    if "agent_manager" not in st.session_state:
+    # 3. AgentManager (он сам себя инициализирует, если пуст)
+    if st.session_state.get("agent_manager") is None:
         st.session_state.agent_manager = AgentManager()
 
     agent_manager = st.session_state.agent_manager
 
-    # --- ПРОВЕРКА НАЛИЧИЯ МЕТОДА ai_edit_excel_file (профилактика) ---
+    # --- ПРОВЕРКА НАЛИЧИЯ МЕТОДА (профилактика) ---
+    # Убеждаемся, что таблица готова к работе
     if not hasattr(st.session_state.table_manager, 'ai_edit_excel_file'):
         st.error("❌ Ошибка: в TableManager отсутствует метод ai_edit_excel_file. Обновите table_manager.py")
         st.stop()
 
     # Основные вкладки
     tabs = st.tabs([
-        "💬 Диалог", "📚 Обучение", "🧠 Память", "📊 Аналитика",
-        "🤖 Workflow", "🔀 Условия", "🗂 Таблицы+ИИ", "🖼️ Изображения", "📖 Справка"
+        "💬 Диалог", "📚 Обучение", " Память", "📊 Аналитика",
+        "🤖 Workflow", " Условия", "🗂 Таблицы+ИИ", "🖼️ Изображения", "📖 Справка"
     ])
 
     with tabs[0]:
@@ -98,7 +103,7 @@ def main():
     with tabs[5]:
         render_conditions_tab()
     with tabs[6]:
-        render_tables_tab(api_key)          # <-- вызывает функцию из ui_components (с быстрым ИИ-редактором)
+        render_tables_tab(api_key)
     with tabs[7]:
         render_images_tab(api_key)
     with tabs[8]:
