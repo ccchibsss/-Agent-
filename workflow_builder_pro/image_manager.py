@@ -23,7 +23,6 @@ class ImageManager:
         self.total_count = 0
 
     def remove_background(self, image: Image.Image) -> Image.Image:
-        """Удаляет фон с изображения используя rembg"""
         try:
             from rembg import remove
         except ImportError:
