@@ -1,4 +1,4 @@
-# ui_components.py - Все UI компоненты для Streamlit (ПОЛНАЯ ВЕРСИЯ С ИИ-РЕДАКТИРОВАНИЕМ EXCEL)
+# ui_components.py - Все UI компоненты для Streamlit (ПОЛНАЯ ВЕРСИЯ С ИИ-РЕДАКТИРОВАНИЕМ EXCEL И SMS)
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -258,7 +258,7 @@ def render_analytics_tab(agent_manager):
 
 
 def render_workflow_tab(agent_manager, api_key):
-    """Рендерит вкладку workflow"""
+    """Рендерит вкладку workflow с поддержкой SMS, условий и улучшенным ИИ"""
     st.subheader("🤖 Конструктор Workflow")
     
     col1, col2 = st.columns([1, 2])
@@ -272,6 +272,7 @@ def render_workflow_tab(agent_manager, api_key):
             ("🔄 Цикл", NodeType.LOOP.value),
             ("📧 Email", NodeType.EMAIL.value),
             ("📱 Telegram", NodeType.TELEGRAM.value),
+            ("📱 SMS", "sms"),   # новый тип
             ("🧠 ИИ Агент", NodeType.AI_AGENT.value),
             ("🧹 Очистка", NodeType.DATA_CLEAN.value),
             ("📊 Сводная", NodeType.PIVOT_TABLE.value),
@@ -306,6 +307,9 @@ def render_workflow_tab(agent_manager, api_key):
             st.info("💡 Добавьте блоки слева")
             return
         
+        # Форма для задания глобальных условий для узлов (можно применять перед запуском)
+        st.markdown("#### ⚙️ Настройка узлов")
+        
         for i, block in enumerate(st.session_state.workflow):
             st.markdown(f"""
 <div class="workflow-node">
@@ -318,31 +322,108 @@ def render_workflow_tab(agent_manager, api_key):
             
             with st.expander(f"⚙️ {block.get('name')}"):
                 cfg = block.get('config', {})
-                if block['type'] == NodeType.DEEPSEEK_AI.value:
-                    cfg['system_prompt'] = st.text_area("Системный", cfg.get('system_prompt', ''), height=60, key=f"ai_sys_{i}")
-                    cfg['user_prompt'] = st.text_area("Запрос", cfg.get('user_prompt', ''), height=60, key=f"ai_user_{i}")
-                elif block['type'] == NodeType.CONDITION.value:
-                    cfg['condition'] = st.text_area("Условие", cfg.get('condition', ''), height=60, key=f"cond_{i}")
+                node_type = block['type']
+                
+                # Общее поле для условия выполнения узла (только для отправки сообщений и действий)
+                if node_type in [NodeType.EMAIL.value, NodeType.TELEGRAM.value, "sms", NodeType.DEEPSEEK_AI.value, NodeType.HTTP_POST.value]:
+                    cfg['condition'] = st.text_area(
+                        "🔀 Условие выполнения (опционально, на русском)",
+                        cfg.get('condition', ''),
+                        height=60,
+                        key=f"cond_node_{i}",
+                        help="Пример: если статус равно 'успех'"
+                    )
+                
+                # Конфигурация в зависимости от типа узла
+                if node_type == NodeType.DEEPSEEK_AI.value:
+                    cfg['system_prompt'] = st.text_area("Системный промпт", cfg.get('system_prompt', 'Ты полезный ассистент'), height=60, key=f"ai_sys_{i}")
+                    cfg['user_prompt'] = st.text_area("Запрос пользователя", cfg.get('user_prompt', ''), height=80, key=f"ai_user_{i}")
+                    cfg['temperature'] = st.slider("Температура", 0.0, 1.0, cfg.get('temperature', 0.3), 0.05, key=f"ai_temp_{i}")
+                
+                elif node_type == NodeType.CONDITION.value:
+                    cfg['condition'] = st.text_area("Условие (на русском)", cfg.get('condition', ''), height=80, key=f"cond_{i}")
                     if cfg.get('condition'):
                         parsed = RussianConditionParser.parse(cfg['condition'])
                         if parsed.get('code'):
                             st.code(parsed['code'], language='python')
-                elif block['type'] == NodeType.AI_AGENT.value:
+                            st.caption(f"Уверенность: {parsed.get('confidence',0)*100:.0f}%")
+                
+                elif node_type == NodeType.LOOP.value:
+                    cfg['items'] = st.text_input("Элементы (список или переменная)", cfg.get('items', '[]'), key=f"loop_items_{i}")
+                    cfg['batch_size'] = st.number_input("Размер пакета", 1, 100, cfg.get('batch_size', 10), key=f"loop_batch_{i}")
+                    cfg['max_iterations'] = st.number_input("Макс. итераций", 1, 10000, cfg.get('max_iterations', 1000), key=f"loop_max_{i}")
+                    # В будущем можно добавить редактирование вложенного workflow
+                
+                elif node_type == NodeType.AI_AGENT.value:
                     agent = agent_manager.agents.get(block.get('agent_id'))
                     if agent:
                         st.info(f"🧠 {agent.name}")
-                    cfg['question'] = st.text_area("Вопрос", cfg.get('question', ''), height=60, key=f"agent_q_{i}")
+                    cfg['question'] = st.text_area("Вопрос агенту", cfg.get('question', ''), height=80, key=f"agent_q_{i}")
+                    cfg['use_training'] = st.checkbox("Использовать обучение", cfg.get('use_training', True), key=f"agent_train_{i}")
+                
+                elif node_type == NodeType.EMAIL.value:
+                    cfg['to'] = st.text_input("Кому", cfg.get('to', ''), key=f"email_to_{i}")
+                    cfg['subject'] = st.text_input("Тема", cfg.get('subject', ''), key=f"email_subj_{i}")
+                    cfg['body'] = st.text_area("Тело письма", cfg.get('body', ''), height=80, key=f"email_body_{i}")
+                
+                elif node_type == NodeType.TELEGRAM.value:
+                    cfg['chat_id'] = st.text_input("Chat ID", cfg.get('chat_id', ''), key=f"tg_chat_{i}")
+                    cfg['message'] = st.text_area("Сообщение", cfg.get('message', ''), height=80, key=f"tg_msg_{i}")
+                    cfg['bot_token'] = st.text_input("Bot Token (опционально)", cfg.get('bot_token', ''), type="password", key=f"tg_token_{i}", help="Оставьте пустым, если токен задан в secrets")
+                
+                elif node_type == "sms":
+                    cfg['phone_number'] = st.text_input("Номер телефона", cfg.get('phone_number', ''), key=f"sms_phone_{i}")
+                    cfg['message'] = st.text_area("Сообщение", cfg.get('message', ''), height=80, key=f"sms_msg_{i}")
+                    cfg['provider'] = st.selectbox("Провайдер", ["twilio", "http"], index=0 if cfg.get('provider')=='twilio' else 1, key=f"sms_prov_{i}")
+                    if cfg['provider'] == 'twilio':
+                        cfg['twilio_account_sid'] = st.text_input("Account SID", cfg.get('twilio_account_sid', ''), type="password", key=f"twilio_sid_{i}")
+                        cfg['twilio_auth_token'] = st.text_input("Auth Token", cfg.get('twilio_auth_token', ''), type="password", key=f"twilio_token_{i}")
+                        cfg['twilio_from_number'] = st.text_input("Номер отправителя", cfg.get('twilio_from_number', ''), key=f"twilio_from_{i}")
+                    else:
+                        cfg['api_url'] = st.text_input("API URL", cfg.get('api_url', 'https://sms.ru/sms/send'), key=f"sms_url_{i}")
+                        cfg['api_key'] = st.text_input("API ключ", cfg.get('api_key', ''), type="password", key=f"sms_key_{i}")
+                
+                elif node_type in [NodeType.EXCEL_READ.value, NodeType.GOOGLE_SHEETS_READ.value]:
+                    cfg['file_path'] = st.text_input("Путь к файлу / URL", cfg.get('file_path', ''), key=f"file_{i}")
+                    cfg['sheet_name'] = st.text_input("Имя листа (опционально)", cfg.get('sheet_name', ''), key=f"sheet_{i}")
+                
+                elif node_type == NodeType.EXCEL_WRITE.value:
+                    cfg['output_path'] = st.text_input("Путь для сохранения", cfg.get('output_path', 'output.xlsx'), key=f"out_{i}")
+                    cfg['apply_formatting'] = st.checkbox("Применить форматирование", cfg.get('apply_formatting', True), key=f"fmt_{i}")
+                
+                elif node_type in [NodeType.HTTP_GET.value, NodeType.HTTP_POST.value]:
+                    cfg['url'] = st.text_input("URL", cfg.get('url', ''), key=f"http_url_{i}")
+                    if node_type == NodeType.HTTP_POST.value:
+                        cfg['body'] = st.text_area("Тело запроса (JSON)", cfg.get('body', '{}'), height=80, key=f"http_body_{i}")
+                
+                elif node_type == NodeType.DATA_CLEAN.value:
+                    cfg['rules'] = {}
+                    cfg['rules']['remove_duplicates'] = st.checkbox("Удалить дубликаты", cfg.get('rules', {}).get('remove_duplicates', False), key=f"clean_dup_{i}")
+                    cfg['rules']['remove_empty'] = st.checkbox("Удалить пустые строки", cfg.get('rules', {}).get('remove_empty', False), key=f"clean_empty_{i}")
+                    cfg['rules']['fill_na'] = st.checkbox("Заполнить пропуски", cfg.get('rules', {}).get('fill_na', False), key=f"clean_fill_{i}")
+                    if cfg['rules'].get('fill_na'):
+                        cfg['rules']['fill_value'] = st.text_input("Значение для заполнения", cfg.get('rules', {}).get('fill_value', ''), key=f"clean_val_{i}")
+                
+                elif node_type == NodeType.PIVOT_TABLE.value:
+                    cfg['index'] = st.text_input("Индекс (столбец)", cfg.get('index', ''), key=f"pivot_idx_{i}")
+                    cfg['columns'] = st.text_input("Колонки (столбец)", cfg.get('columns', ''), key=f"pivot_col_{i}")
+                    cfg['values'] = st.text_input("Значения (столбец)", cfg.get('values', ''), key=f"pivot_val_{i}")
+                    cfg['aggfunc'] = st.selectbox("Агрегация", ['sum', 'mean', 'count', 'min', 'max'], index=0, key=f"pivot_agg_{i}")
+                
                 block['config'] = cfg
-                if st.button(f"🗑️ Удалить", key=f"del_wf_{i}"):
+                
+                if st.button(f"🗑️ Удалить узел", key=f"del_wf_{i}"):
                     st.session_state.workflow.pop(i)
                     st.rerun()
         
-        if st.button("🚀 ЗАПУСТИТЬ", type="primary", use_container_width=True):
+        # Кнопка запуска workflow
+        if st.button("🚀 ЗАПУСТИТЬ WORKFLOW", type="primary", use_container_width=True):
             progress = st.progress(0)
             status = st.empty()
             def update_progress(idx, node):
                 progress.progress((idx + 1) / len(st.session_state.workflow))
                 status.text(f"🔄 {node.get('name')}")
+            
             executor = WorkflowExecutor(
                 st.session_state.workflow,
                 api_key,
@@ -353,12 +434,21 @@ def render_workflow_tab(agent_manager, api_key):
             progress.progress(1.0)
             if result['success']:
                 st.balloons()
-                st.success(f"✅ Успешно за {result['execution_time']:.1f}с")
-                with st.expander("📋 Результаты", expanded=True):
+                st.success(f"✅ Workflow выполнен за {result['execution_time']:.1f}с")
+                with st.expander("📋 Детали выполнения", expanded=True):
                     for res in result['results']:
-                        st.json({k: v for k, v in res['result'].items() if k != 'df'})
+                        # Скрываем большие объекты для читаемости
+                        clean_result = {k: v for k, v in res['result'].items() if not isinstance(v, pd.DataFrame)}
+                        st.json({
+                            'node': res['node'],
+                            'type': res['type'],
+                            'result': clean_result
+                        })
+                if result.get('context'):
+                    st.subheader("📌 Контекст после выполнения")
+                    st.json({k: str(v)[:200] for k, v in result['context'].items() if not isinstance(v, pd.DataFrame)})
             else:
-                st.error(f"❌ Ошибка: {result.get('error')}")
+                st.error(f"❌ Ошибка в узле {result.get('error_node')}: {result.get('error')}")
 
 
 def render_conditions_tab():
@@ -369,6 +459,10 @@ def render_conditions_tab():
     <b>Примеры:</b><br>
     • если цена больше 1000 то отправить уведомление<br>
     • если статус равно 'успех' иначе отправить ошибку<br>
+    • если количество меньше 5 то пополнить склад<br>
+    • если текст содержит 'срочно' то отметить как важное<br>
+    • если поле пусто то заполнить значением по умолчанию<br>
+    • если сумма между 1000 и 5000 то одобрить заявку<br>
 </div>
 """, unsafe_allow_html=True)
     col1, col2 = st.columns(2)
@@ -376,31 +470,36 @@ def render_conditions_tab():
         for ex in RussianConditionParser.EXAMPLES[:5]:
             st.code(f"📌 {ex}")
     with col2:
-        test_cond = st.text_area("Введите условие", height=150, key="test_condition")
+        test_cond = st.text_area("Введите своё условие", height=150, key="test_condition")
         if test_cond:
             parsed = RussianConditionParser.parse(test_cond)
             st.metric("Тип", parsed.get('type'))
             st.metric("Уверенность", f"{parsed.get('confidence', 0)*100:.0f}%")
             if parsed.get('code'):
-                st.success(f"💻 `{parsed['code']}`")
+                st.success(f"💻 Сгенерированный код:\n```python\n{parsed['code']}\n```")
+            if parsed.get('errors'):
+                st.error(f"Ошибки: {', '.join(parsed['errors'])}")
 
 
 def render_tables_tab(api_key):
-    """Рендерит вкладку таблиц + быстрое ИИ-редактирование Excel"""
+    """Рендерит вкладку таблиц + быстрое ИИ-редактирование Excel/CSV"""
     st.subheader("🗂 Таблицы + ИИ + Редактор")
     
-    # ---------- НОВЫЙ БЛОК: БЫСТРОЕ ИИ-РЕДАКТИРОВАНИЕ EXCEL ----------
-    st.markdown("## 🤖 Быстрое ИИ-редактирование Excel")
+    # ---------- БЫСТРОЕ ИИ-РЕДАКТИРОВАНИЕ ТАБЛИЦ (Excel/CSV) ----------
+    st.markdown("## 🤖 Быстрое ИИ-редактирование")
     st.markdown("Загрузите файл → опишите изменения на русском → скачайте результат")
     
     col1, col2 = st.columns([1, 1])
     with col1:
-        uploaded_excel = st.file_uploader(
-            "📂 Выберите Excel файл",
+        uploaded_file = st.file_uploader(
+            "📂 Выберите файл",
             type=['xlsx', 'xls', 'csv'],
             key="ai_upload_excel",
             help="Поддерживаются .xlsx, .xls, .csv"
         )
+        file_type = "excel"
+        if uploaded_file and uploaded_file.name.endswith('.csv'):
+            file_type = "csv"
     with col2:
         ai_instruction = st.text_area(
             "✏️ Инструкция для ИИ",
@@ -410,7 +509,7 @@ def render_tables_tab(api_key):
         )
         run_ai = st.button("🚀 Применить ИИ", type="primary", use_container_width=True, key="run_ai_excel")
     
-    if uploaded_excel and run_ai:
+    if uploaded_file and run_ai:
         if not api_key:
             st.error("❌ Введите API ключ DeepSeek в боковой панели")
         elif not ai_instruction.strip():
@@ -418,10 +517,11 @@ def render_tables_tab(api_key):
         else:
             with st.spinner("🧠 ИИ анализирует и применяет изменения..."):
                 result = st.session_state.table_manager.ai_edit_excel_file(
-                    input_file=uploaded_excel,
+                    input_file=uploaded_file,
                     instruction=ai_instruction,
                     api_key=api_key,
-                    sheet_name=0
+                    sheet_name=0,
+                    file_type=file_type
                 )
             if result['success']:
                 st.success(result['message'])
@@ -431,11 +531,18 @@ def render_tables_tab(api_key):
                         st.markdown(f"- {desc}")
                 st.markdown("### 👁️ Превью результата (первые 10 строк)")
                 st.dataframe(result['df'].head(10), use_container_width=True)
+                
+                # Определяем расширение для скачивания
+                ext = "xlsx" if file_type == "excel" else "csv"
+                mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if ext == "xlsx" else "text/csv"
+                original_name = uploaded_file.name
+                new_name = f"fixed_{original_name.rsplit('.',1)[0]}.{ext}"
+                
                 st.download_button(
-                    label="📥 Скачать исправленный Excel",
+                    label="📥 Скачать обработанный файл",
                     data=result['output_bytes'],
-                    file_name=f"fixed_{uploaded_excel.name}",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    file_name=new_name,
+                    mime=mime,
                     use_container_width=True
                 )
             else:
@@ -443,7 +550,7 @@ def render_tables_tab(api_key):
     
     st.markdown("---")
     
-    # ----- ОСТАЛЬНОЙ ФУНКЦИОНАЛ (СОХРАНЁННЫЕ ТАБЛИЦЫ, ЗАГРУЗКА, РЕДАКТОР) -----
+    # ---------- УПРАВЛЕНИЕ СОХРАНЁННЫМИ ТАБЛИЦАМИ ----------
     with st.expander("📚 Сохранённые таблицы"):
         if not st.session_state.saved_tables:
             st.info("💡 Нет сохранённых таблиц")
@@ -453,7 +560,7 @@ def render_tables_tab(api_key):
                     st.dataframe(df.head(5), use_container_width=True)
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        if st.button("✏️ Открыть", key=f"open_{table_id}"):
+                        if st.button("✏️ Открыть в редакторе", key=f"open_{table_id}"):
                             st.session_state.current_df = df.copy()
                             st.session_state.editing_table_id = table_id
                             st.rerun()
@@ -461,7 +568,7 @@ def render_tables_tab(api_key):
                         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
                             st.session_state.table_manager.write_excel(df, tmp.name)
                             with open(tmp.name, 'rb') as f:
-                                st.download_button("📥 Скачать", f, file_name=f"{table_id}.xlsx")
+                                st.download_button("📥 Скачать Excel", f, file_name=f"{table_id}.xlsx")
                     with col3:
                         if st.button("🗑️ Удалить", key=f"del_saved_{table_id}"):
                             del st.session_state.saved_tables[table_id]
@@ -470,10 +577,11 @@ def render_tables_tab(api_key):
                                 st.session_state.current_df = None
                             st.rerun()
     
+    # ---------- ЗАГРУЗКА НОВОЙ ТАБЛИЦЫ ДЛЯ РЕДАКТИРОВАНИЯ ----------
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("### 📥 Загрузка данных")
-        uploaded = st.file_uploader("Excel файл", type=['xlsx', 'xls', 'csv'], key="excel_upload")
+        st.markdown("### 📥 Загрузка новой таблицы")
+        uploaded = st.file_uploader("Excel или CSV файл", type=['xlsx', 'xls', 'csv'], key="excel_upload")
         if uploaded:
             with st.spinner("Чтение файла..."):
                 try:
@@ -482,19 +590,20 @@ def render_tables_tab(api_key):
                     else:
                         df = st.session_state.table_manager.read_excel(uploaded)
                     if df is not None:
-                        table_id = f"ex_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        table_id = f"table_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                         st.session_state.current_df = df
                         st.session_state.editing_table_id = table_id
                         st.session_state.saved_tables[table_id] = df.copy()
                         save_tables_auto(st.session_state.saved_tables)
-                        st.success(f"✅ Загружено: {df.shape}")
+                        st.success(f"✅ Загружено: {df.shape[0]} строк, {df.shape[1]} колонок")
                         st.rerun()
                 except Exception as e:
                     st.error(f"❌ Ошибка: {e}")
     
+    # ---------- ИНТЕРАКТИВНЫЙ РЕДАКТОР ТАБЛИЦЫ ----------
     with col2:
         if st.session_state.current_df is not None:
-            st.markdown(f"### 📊 Редактор: {st.session_state.editing_table_id}")
+            st.markdown(f"### ✏️ Редактор: {st.session_state.editing_table_id}")
             edited_df = st.data_editor(
                 st.session_state.current_df,
                 num_rows="dynamic",
@@ -510,14 +619,14 @@ def render_tables_tab(api_key):
 
 
 def render_images_tab(api_key):
-    """Рендерит вкладку изображений"""
+    """Рендерит вкладку изображений с ИИ-обработкой"""
     st.subheader("🖼️ Редактор изображений с ИИ")
     image_manager = st.session_state.image_manager
     if image_manager:
         image_manager.api_key = api_key
     
     uploaded_files = st.file_uploader(
-        "Выберите изображения",
+        "Выберите изображения (jpg, png, webp, bmp, gif)",
         type=list(CONFIG.SUPPORTED_IMAGE_FORMATS),
         accept_multiple_files=True,
         key="image_upload"
@@ -528,7 +637,7 @@ def render_images_tab(api_key):
                 image = Image.open(uploaded_file)
                 st.session_state.uploaded_images[uploaded_file.name] = image
             except Exception as e:
-                st.error(f"Ошибка: {e}")
+                st.error(f"Ошибка загрузки {uploaded_file.name}: {e}")
         st.success(f"✅ Загружено {len(st.session_state.uploaded_images)} изображений")
     
     if st.session_state.uploaded_images:
@@ -541,7 +650,7 @@ def render_images_tab(api_key):
     if st.session_state.uploaded_images:
         st.markdown("---")
         st.markdown("### ✏️ Редактирование")
-        selected_filename = st.selectbox("Выберите изображение", list(st.session_state.uploaded_images.keys()))
+        selected_filename = st.selectbox("Выберите изображение для обработки", list(st.session_state.uploaded_images.keys()))
         if selected_filename:
             original = st.session_state.uploaded_images[selected_filename]
             col1, col2 = st.columns(2)
@@ -567,26 +676,64 @@ def render_images_tab(api_key):
 
 def render_help_tab():
     """Рендерит вкладку справки"""
-    st.subheader("📖 Справка")
+    st.subheader("📖 Справка и документация")
     st.markdown("""
 ## 🚀 Быстрый старт
-1. **Получите API ключ**: [platform.deepseek.com](https://platform.deepseek.com)
+1. **Получите API ключ DeepSeek**: [platform.deepseek.com](https://platform.deepseek.com)
 2. **Вставьте ключ** в боковой панели
-3. **Выберите или создайте агента**
-4. **Начните диалог** или постройте workflow
+3. **Выберите или создайте агента** для диалога
+4. **Начните диалог** или постройте workflow автоматизации
+
 ---
-## 🖼️ Работа с изображениями
-- 📥 **Массовая загрузка** - до 10,000+ изображений
-- 🎨 **Удаление фона** - автоматическое (rembg)
-- 💧 **Удаление водяных знаков через ИИ** - DeepSeek API
-- 💬 **Добавление текста** - водяные знаки
-- 💾 **Сохранение результатов** - с тем же именем
+
+## 🧠 ИИ Агенты
+- **Обучение на примерах** – добавляйте пары вопрос-ответ для улучшения ответов
+- **Память** – сохраняйте факты, которые агент будет использовать в диалогах
+- **Аналитика** – отслеживайте прогресс обучения и успешность ответов
+
 ---
-## 🗂 Редактирование таблиц
-- ✏️ **Полноценный редактор** - изменяйте данные
-- 💾 **Автосохранение** - изменения сохраняются
-- 📥 **Экспорт** - скачивайте в Excel
-- 🤖 **ИИ-трансформация** - описывайте изменения
+
+## 🤖 Workflow (Автоматизация)
+- **Строите последовательность блоков** перетаскиванием (кнопками)
+- **Поддерживаемые блоки**:
+  - Чтение/запись Excel и Google Sheets
+  - Вызов DeepSeek AI с системными промптами
+  - Условия на русском языке (если... то... иначе)
+  - Циклы по спискам
+  - Отправка Email, Telegram, **SMS** (через Twilio или HTTP провайдера)
+  - Вызов обученных ИИ агентов
+  - Очистка данных, сводные таблицы, HTTP запросы
+- **Узлы могут иметь условия выполнения** – например, отправлять SMS только если статус "успех"
+
 ---
-*Workflow Builder Pro v9.3 • Монопоточная версия • © 2026*
-""")
+
+## 🗂 Таблицы
+- **ИИ-редактирование** – опишите изменения на русском, ИИ применит их
+- **Интерактивный редактор** – изменяйте данные прямо в браузере
+- **Автосохранение** – все изменения сохраняются
+
+---
+
+## 🖼️ Изображения
+- **Удаление фона** (требуется `rembg`)
+- **Удаление водяных знаков через ИИ** (DeepSeek)
+- **Ресайз, поворот, фильтры, текст** – стандартные операции
+- **Пакетная обработка** – для нескольких файлов
+
+---
+
+## 📱 Мобильная версия
+Приложение адаптировано для экранов менее 768px. Кнопки и карточки корректно отображаются на смартфонах.
+
+---
+
+## 🔧 Установка дополнительных зависимостей
+```bash
+# Для SMS через Twilio
+pip install twilio
+
+# Для удаления фона
+pip install rembg
+
+# Для голосового ввода/вывода
+pip install SpeechRecognition gTTS
