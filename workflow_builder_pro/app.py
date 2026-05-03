@@ -258,7 +258,7 @@ def main():
     with tabs[5]:
         render_conditions_tab()
     with tabs[6]:
-        render_tables_tab_with_ai_edit(api_key)
+        render_tables_tab(api_key)   # используем функцию из ui_components
     with tabs[7]:
         render_images_tab(api_key)
     with tabs[8]:
