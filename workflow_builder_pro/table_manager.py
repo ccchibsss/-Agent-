@@ -69,7 +69,7 @@ class TableManager:
                    range_a1: Optional[str] = None, use_cache: bool = True) -> Optional[pd.DataFrame]:
         if not EXCEL_SUPPORT:
             raise ImportError("Установите openpyxl: pip install openpyxl")
-        # Пробуем читать как Excel (НЕ CSV). При неудаче выбрасываем ошибку.
+        # Читаем строго как Excel (не CSV)
         df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl',
                            **({'usecols': range_a1} if range_a1 else {}))
         if use_cache:
@@ -129,7 +129,6 @@ class TableManager:
 
     @cache_result()
     def ai_analyze_dataframe(self, df: pd.DataFrame, instruction: str, api_key: str) -> Dict[str, Any]:
-        """ИИ-анализ таблицы – возвращает готовый код на pandas."""
         if not api_key:
             return {'error': 'API ключ не указан'}
         df_summary = {
@@ -193,7 +192,6 @@ class TableManager:
             return {'error': f'Ошибка ИИ: {str(e)}'}
 
     def execute_transformation(self, df: pd.DataFrame, transformation_code: str) -> pd.DataFrame:
-        """Выполняет код pandas над DataFrame."""
         safe_globals = {
             "pd": pd,
             "np": __import__('numpy') if 'numpy' in transformation_code else None,
