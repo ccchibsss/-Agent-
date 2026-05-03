@@ -1,6 +1,6 @@
 """
 UI-функции для рендеринга вкладок приложения.
-Исправлено: сброс поля ввода через pop, добавлены недостающие ключи в session_state.
+Исправлено: добавление agent_id в config, выбор агента при настройке.
 """
 import streamlit as st
 import pandas as pd
@@ -23,7 +23,6 @@ from table_manager import TableManager
 from image_manager import ImageManager
 
 
-# ---------- Чат ----------
 def render_chat_tab(agent_manager: AgentManager, api_key: str):
     current = agent_manager.get_current_agent()
     if not current:
@@ -96,7 +95,6 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
         st.rerun()
 
 
-# ---------- Обучение ----------
 def render_training_tab(agent_manager: AgentManager):
     current = agent_manager.get_current_agent()
     if not current:
@@ -146,7 +144,6 @@ def render_training_tab(agent_manager: AgentManager):
                 st.warning("Не найдено примеров в формате Вопрос -> Ответ")
 
 
-# ---------- Память ----------
 def render_memory_tab(agent_manager: AgentManager):
     current = agent_manager.get_current_agent()
     if not current:
@@ -184,7 +181,6 @@ def render_memory_tab(agent_manager: AgentManager):
         st.rerun()
 
 
-# ---------- Аналитика ----------
 def render_analytics_tab(agent_manager: AgentManager):
     current = agent_manager.get_current_agent()
     if not current:
@@ -210,7 +206,6 @@ def render_analytics_tab(agent_manager: AgentManager):
                 st.markdown(f"**🤖** {conv['agent'][:200]}")
 
 
-# ---------- Условия ----------
 def render_conditions_tab():
     st.subheader("🔀 Русские условия")
     st.markdown("""
@@ -259,11 +254,15 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
         ]
         for name, btype in blocks:
             if st.button(f"{name}", key=f"add_{btype}", use_container_width=True):
+                # Для ИИ Агента при добавлении через общую кнопку задаём agent_id пустым
+                cfg = _default_config(btype)
+                if btype == NodeType.AI_AGENT.value:
+                    cfg['agent_id'] = ""
                 st.session_state.workflow.append({
                     "id": len(st.session_state.workflow),
                     "name": name,
                     "type": btype,
-                    "config": _default_config(btype),
+                    "config": cfg,
                     "status": WorkflowStatus.PENDING.value
                 })
                 st.rerun()
@@ -271,12 +270,16 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
         st.markdown("### 🧠 Агенты")
         for agent in agent_manager.agents.values():
             if st.button(f"🧠 {agent.name}", key=f"wf_agent_{agent.id}", use_container_width=True):
+                # При добавлении конкретного агента agent_id сразу в config
                 st.session_state.workflow.append({
                     "id": len(st.session_state.workflow),
                     "name": f"Агент: {agent.name}",
                     "type": NodeType.AI_AGENT.value,
-                    "agent_id": agent.id,
-                    "config": {"question": "", "use_training": True},
+                    "config": {
+                        "agent_id": agent.id,
+                        "question": "",
+                        "use_training": True
+                    },
                     "status": WorkflowStatus.PENDING.value
                 })
                 st.rerun()
@@ -359,10 +362,10 @@ def _default_config(node_type: str) -> dict:
             "chat_id": "", "message": "", "parse_mode": "HTML"
         },
         NodeType.AI_AGENT.value: {
-            "question": "Проанализируй данные", "use_training": True
+            "agent_id": "", "question": "Проанализируй данные", "use_training": True
         },
         NodeType.DATA_CLEAN.value: {
-            "remove_duplicates": True, "remove_empty": True, "fill_na": "", "fill_value": ""
+            "remove_duplicates": True, "remove_empty": True, "fill_na": ""
         },
         NodeType.PIVOT_TABLE.value: {
             "index": "", "columns": "", "values": "", "aggfunc": "sum"
@@ -421,9 +424,19 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
                                          key=f"tg_parse_{idx}")
 
     elif btype == NodeType.AI_AGENT.value:
-        agent = agent_manager.agents.get(block.get('agent_id'))
-        if agent:
-            st.info(f"🧠 Агент: {agent.name}")
+        # Выбор агента из существующих
+        agent_ids = list(agent_manager.agents.keys())
+        agent_names = [agent_manager.agents[a].name for a in agent_ids]
+        current_agent_id = cfg.get('agent_id', '')
+        if current_agent_id in agent_ids:
+            current_idx = agent_ids.index(current_agent_id)
+        else:
+            current_idx = 0 if agent_ids else -1
+        if agent_names:
+            new_agent_name = st.selectbox("Агент", agent_names, index=current_idx, key=f"agent_sel_{idx}")
+            cfg['agent_id'] = agent_ids[agent_names.index(new_agent_name)]
+        else:
+            st.warning("Нет доступных агентов")
         cfg['question'] = st.text_area("Вопрос агенту", cfg.get('question', ''), height=60, key=f"agent_q_{idx}")
         cfg['use_training'] = st.checkbox("Использовать обучение", cfg.get('use_training', True), key=f"agent_train_{idx}")
 
@@ -480,7 +493,6 @@ def _execute_workflow(agent_manager, api_key):
 def render_tables_tab(api_key: str):
     st.subheader("🗂 Таблицы + ИИ + Редактор")
     table_manager = st.session_state.table_manager
-    # Сохранённые таблицы
     with st.expander("📚 Сохранённые таблицы", expanded=not st.session_state.saved_tables):
         if not st.session_state.saved_tables:
             st.info("Нет сохранённых таблиц. Загрузите или создайте.")
