@@ -1,5 +1,7 @@
 """
 Менеджер для массовой обработки изображений с ИИ.
+Добавлен метод apply_ai_edits – выполняет цепочку операций,
+предложенных ИИ на основе текстового описания.
 """
 import streamlit as st
 import numpy as np
@@ -133,6 +135,7 @@ class ImageManager:
         return image
 
     def ai_edit_image(self, image: Image.Image, instruction: str) -> Dict[str, Any]:
+        """Возвращает JSON с предложенными операциями (не выполняет их)."""
         if not self.api_key:
             return {'error': 'API ключ не указан'}
         try:
@@ -160,6 +163,24 @@ class ImageManager:
             return {'error': 'Не удалось получить ответ от ИИ'}
         except Exception as e:
             return {'error': f'Ошибка ИИ: {str(e)}'}
+
+    def apply_ai_edits(self, image: Image.Image, instruction: str) -> Image.Image:
+        """
+        Получает инструкцию, отправляет ИИ, получает набор операций и
+        последовательно применяет их к изображению.
+        """
+        plan = self.ai_edit_image(image, instruction)
+        if 'error' in plan:
+            raise RuntimeError(plan['error'])
+        operations = plan.get('operations', [])
+        for op in operations:
+            op_type = op.get('type')
+            params = op.get('params', {})
+            try:
+                image = self._apply_operation(image, ImageEditOperation(op_type), params)
+            except Exception as e:
+                logger.warning(f"Не удалось применить операцию {op_type}: {e}")
+        return image
 
     def process_batch(self, images: List[Tuple[str, Image.Image]],
                       operation: ImageEditOperation, params: Dict[str, Any],
