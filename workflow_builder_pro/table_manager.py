@@ -1,5 +1,6 @@
 """
 Менеджер для работы с таблицами (Google Sheets, Excel).
+Исправлено: убран ошибочный fallback на CSV при чтении Excel.
 """
 import streamlit as st
 import pandas as pd
@@ -68,18 +69,9 @@ class TableManager:
                    range_a1: Optional[str] = None, use_cache: bool = True) -> Optional[pd.DataFrame]:
         if not EXCEL_SUPPORT:
             raise ImportError("Установите openpyxl: pip install openpyxl")
-        try:
-            # Сначала пытаемся как Excel
-            df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl',
-                               **({'usecols': range_a1} if range_a1 else {}))
-        except Exception as exc:
-            logger.warning(f"Ошибка чтения Excel: {exc}. Пробую как CSV...")
-            # fallback на CSV
-            if isinstance(file_path, BytesIO):
-                file_path.seek(0)
-                df = pd.read_csv(file_path)
-            else:
-                df = pd.read_csv(file_path)
+        # Пробуем читать как Excel (НЕ CSV). При неудаче выбрасываем ошибку.
+        df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl',
+                           **({'usecols': range_a1} if range_a1 else {}))
         if use_cache:
             cache_key = f"excel:{hash(str(file_path))}:{sheet_name}"
             self._cache[cache_key] = df.copy()
@@ -137,6 +129,7 @@ class TableManager:
 
     @cache_result()
     def ai_analyze_dataframe(self, df: pd.DataFrame, instruction: str, api_key: str) -> Dict[str, Any]:
+        """ИИ-анализ таблицы – возвращает готовый код на pandas."""
         if not api_key:
             return {'error': 'API ключ не указан'}
         df_summary = {
@@ -200,6 +193,7 @@ class TableManager:
             return {'error': f'Ошибка ИИ: {str(e)}'}
 
     def execute_transformation(self, df: pd.DataFrame, transformation_code: str) -> pd.DataFrame:
+        """Выполняет код pandas над DataFrame."""
         safe_globals = {
             "pd": pd,
             "np": __import__('numpy') if 'numpy' in transformation_code else None,
