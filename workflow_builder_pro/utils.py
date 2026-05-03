@@ -30,7 +30,6 @@ logger = logging.getLogger(__name__)
 # АВТОСОХРАНЕНИЕ
 # ============================================================================
 def save_workflow_auto(workflow: List[Dict]):
-    """Автосохранение workflow в локальный файл"""
     try:
         with open(WORKFLOW_FILE, 'w', encoding='utf-8') as f:
             json.dump(workflow, f, ensure_ascii=False, indent=2)
@@ -39,7 +38,6 @@ def save_workflow_auto(workflow: List[Dict]):
 
 
 def load_workflow_auto() -> List[Dict]:
-    """Автозагрузка workflow из локального файла"""
     if WORKFLOW_FILE.exists():
         try:
             with open(WORKFLOW_FILE, 'r', encoding='utf-8') as f:
@@ -50,7 +48,6 @@ def load_workflow_auto() -> List[Dict]:
 
 
 def save_agents_auto(agents_data: Dict):
-    """Автосохранение агентов"""
     try:
         with open(AGENTS_FILE, 'w', encoding='utf-8') as f:
             json.dump(agents_data, f, ensure_ascii=False, indent=2)
@@ -59,7 +56,6 @@ def save_agents_auto(agents_data: Dict):
 
 
 def load_agents_auto() -> Optional[Dict]:
-    """Автозагрузка агентов"""
     if AGENTS_FILE.exists():
         try:
             with open(AGENTS_FILE, 'r', encoding='utf-8') as f:
@@ -70,7 +66,6 @@ def load_agents_auto() -> Optional[Dict]:
 
 
 def save_messages_auto(messages: List[Dict]):
-    """Автосохранение сообщений чата"""
     try:
         with open(MESSAGES_FILE, 'w', encoding='utf-8') as f:
             json.dump(messages, f, ensure_ascii=False, indent=2)
@@ -79,7 +74,6 @@ def save_messages_auto(messages: List[Dict]):
 
 
 def load_messages_auto() -> List[Dict]:
-    """Автозагрузка сообщений чата"""
     if MESSAGES_FILE.exists():
         try:
             with open(MESSAGES_FILE, 'r', encoding='utf-8') as f:
@@ -90,7 +84,6 @@ def load_messages_auto() -> List[Dict]:
 
 
 def save_history_auto(history: List[Dict]):
-    """Автосохранение истории"""
     try:
         with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
@@ -99,7 +92,6 @@ def save_history_auto(history: List[Dict]):
 
 
 def load_history_auto() -> List[Dict]:
-    """Автозагрузка истории"""
     if HISTORY_FILE.exists():
         try:
             with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
@@ -110,7 +102,6 @@ def load_history_auto() -> List[Dict]:
 
 
 def save_tables_auto(tables_data: Dict):
-    """Автосохранение таблиц"""
     try:
         with open(TABLES_FILE, 'w', encoding='utf-8') as f:
             serializable = {}
@@ -129,7 +120,6 @@ def save_tables_auto(tables_data: Dict):
 
 
 def load_tables_auto() -> Dict:
-    """Автозагрузка таблиц"""
     if TABLES_FILE.exists():
         try:
             with open(TABLES_FILE, 'r', encoding='utf-8') as f:
@@ -147,7 +137,6 @@ def load_tables_auto() -> Dict:
 
 
 def save_images_metadata_auto(metadata: Dict):
-    """Автосохранение метаданных изображений"""
     try:
         with open(IMAGES_METADATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, ensure_ascii=False, indent=2)
@@ -156,7 +145,6 @@ def save_images_metadata_auto(metadata: Dict):
 
 
 def load_images_metadata_auto() -> Dict:
-    """Автозагрузка метаданных изображений"""
     if IMAGES_METADATA_FILE.exists():
         try:
             with open(IMAGES_METADATA_FILE, 'r', encoding='utf-8') as f:
