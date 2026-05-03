@@ -1,4 +1,4 @@
-# ui_components.py - Все UI компоненты для Streamlit
+# ui_components.py - Все UI компоненты для Streamlit (исправленная версия)
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -27,14 +27,12 @@ def render_sidebar() -> str:
     
     st.markdown("---")
     
-    # Получаем менеджер агентов
     from ai_agent import AgentManager
     agent_manager = st.session_state.get('agent_manager')
     if agent_manager is None:
         agent_manager = AgentManager()
         st.session_state.agent_manager = agent_manager
     
-    # Список агентов
     for agent in agent_manager.agents.values():
         is_selected = agent_manager.current_agent_id == agent.id
         selected_class = "agent-card-selected" if is_selected else ""
@@ -51,7 +49,6 @@ def render_sidebar() -> str:
     
     st.markdown("---")
     
-    # Создание агента
     with st.expander("➕ СОЗДАТЬ АГЕНТА", expanded=False):
         new_name = st.text_input("Имя", placeholder="Мой Помощник", key="new_agent_name")
         new_role = st.text_input("Роль", placeholder="эксперт по...", key="new_agent_role")
@@ -115,7 +112,10 @@ def render_chat_tab(agent_manager, api_key):
         if st.button("🚀 Отправить", type="primary", use_container_width=True):
             if user_input.strip():
                 st.session_state.agent_messages.append({'role': 'user', 'content': user_input.strip()})
-                st.session_state.chat_input = ""
+                
+                # Безопасная очистка поля ввода
+                if 'chat_input' in st.session_state:
+                    st.session_state.chat_input = ""
                 
                 with st.spinner("🤖 Агент думает..."):
                     response = current_agent.generate_response(user_input.strip(), api_key, use_training)
@@ -149,7 +149,8 @@ def render_chat_tab(agent_manager, api_key):
                 recognized = recognize_speech_from_audio(audio_file.read())
                 if recognized:
                     st.success(f"✅ Распознано: {recognized}")
-                    st.session_state.chat_input = recognized
+                    if 'chat_input' in st.session_state:
+                        st.session_state.chat_input = recognized
                     st.session_state.voice_show_upload = False
                     st.rerun()
                 else:
