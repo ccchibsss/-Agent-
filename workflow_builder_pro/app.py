@@ -44,29 +44,35 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
+    # Боковая панель возвращает API-ключ
     api_key = render_sidebar()
 
+    # --- ИНИЦИАЛИЗАЦИЯ МЕНЕДЖЕРОВ с ПРОВЕРКОЙ НАЛИЧИЯ В session_state ---
+    # TableManager
     if "table_manager" not in st.session_state:
         st.session_state.table_manager = TableManager(api_key)
-    else:
-        if st.session_state.table_manager.api_key != api_key:
-            st.session_state.table_manager.api_key = api_key
+    elif st.session_state.table_manager.api_key != api_key:
+        st.session_state.table_manager.api_key = api_key
+        logger.info("API ключ обновлён в TableManager")
 
+    # ImageManager
     if "image_manager" not in st.session_state:
         st.session_state.image_manager = ImageManager(api_key)
-    else:
-        if st.session_state.image_manager.api_key != api_key:
-            st.session_state.image_manager.api_key = api_key
+    elif st.session_state.image_manager.api_key != api_key:
+        st.session_state.image_manager.api_key = api_key
 
+    # AgentManager (не требует api_key в конструкторе, но может использовать позже)
     if "agent_manager" not in st.session_state:
         st.session_state.agent_manager = AgentManager()
 
     agent_manager = st.session_state.agent_manager
 
+    # Проверка наличия метода (на случай устаревшей версии table_manager)
     if not hasattr(st.session_state.table_manager, 'ai_edit_excel_file'):
         st.error("❌ Ошибка: в TableManager отсутствует метод ai_edit_excel_file. Обновите table_manager.py")
         st.stop()
 
+    # Основные вкладки
     tabs = st.tabs([
         "💬 Диалог", "📚 Обучение", "🧠 Память", "📊 Аналитика",
         "🤖 Workflow", "🔀 Условия", "🗂 Таблицы+ИИ", "🖼️ Изображения", "📖 Справка"
