@@ -68,12 +68,20 @@ class TableManager:
                    range_a1: Optional[str] = None, use_cache: bool = True) -> Optional[pd.DataFrame]:
         if not EXCEL_SUPPORT:
             raise ImportError("Установите openpyxl: pip install openpyxl")
-        cache_key = f"excel:{hash(str(file_path))}:{sheet_name}"
-        if use_cache and cache_key in self._cache:
-            return self._cache[cache_key].copy()
-        df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl',
-                           **({'usecols': range_a1} if range_a1 else {}))
+        try:
+            # Сначала пытаемся как Excel
+            df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl',
+                               **({'usecols': range_a1} if range_a1 else {}))
+        except Exception as exc:
+            logger.warning(f"Ошибка чтения Excel: {exc}. Пробую как CSV...")
+            # fallback на CSV
+            if isinstance(file_path, BytesIO):
+                file_path.seek(0)
+                df = pd.read_csv(file_path)
+            else:
+                df = pd.read_csv(file_path)
         if use_cache:
+            cache_key = f"excel:{hash(str(file_path))}:{sheet_name}"
             self._cache[cache_key] = df.copy()
         self._last_operation = {
             'type': 'read', 'source': 'excel', 'rows': len(df),
