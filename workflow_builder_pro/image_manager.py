@@ -19,11 +19,10 @@ logger = logging.getLogger(__name__)
 
 class ImageManager:
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key                # может быть None, тогда методы требуют явный ключ
+        self.api_key = api_key
         self.processed_count = 0
         self.total_count = 0
 
-    # ---------- простые операции (без API) ----------
     def remove_background(self, image: Image.Image) -> Image.Image:
         try:
             from rembg import remove
@@ -134,7 +133,6 @@ class ImageManager:
             return image.convert('RGB')
         return image
 
-    # ---------- ИИ‑операции ----------
     def ai_edit_image(self, image: Image.Image, instruction: str,
                       api_key: Optional[str] = None) -> Dict[str, Any]:
         """Возвращает план операций от ИИ (не выполняет их)."""
@@ -169,10 +167,7 @@ class ImageManager:
 
     def apply_ai_edits(self, image: Image.Image, instruction: str,
                        api_key: Optional[str] = None) -> Image.Image:
-        """
-        Получает инструкцию, отправляет ИИ, получает набор операций и
-        последовательно применяет их к изображению.
-        """
+        """Получает инструкцию, отправляет ИИ, получает набор операций и применяет их."""
         plan = self.ai_edit_image(image, instruction, api_key=api_key)
         if 'error' in plan:
             raise RuntimeError(plan['error'])
@@ -207,9 +202,7 @@ class ImageManager:
     def batch_ai_edit(self, images: List[Tuple[str, Image.Image]],
                       instruction: str, api_key: Optional[str] = None,
                       progress_callback: Optional[Callable] = None) -> List[Tuple[str, Image.Image]]:
-        """
-        Применяет ИИ‑инструкцию ко всем изображениям.
-        """
+        """Применяет ИИ‑инструкцию ко всем изображениям."""
         key = api_key or self.api_key
         if not key:
             raise RuntimeError("API ключ не указан")
