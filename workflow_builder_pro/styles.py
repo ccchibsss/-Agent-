@@ -292,7 +292,5 @@ def get_app_styles() -> str:
             .main-header h1 { font-size: 1.8rem !important; }
             div[data-testid="column"] { flex: 1 1 100% !important; }
         }
-        
-        /* ...... (остальные стили без изменений, для краткости опущены) ...... */
     </style>
     """
