@@ -1,6 +1,6 @@
 """
 UI-функции для рендеринга вкладок приложения.
-Исправлено: при загрузке Excel отображается понятное сообщение об ошибке.
+Исправлено: сброс поля ввода через pop, добавлены недостающие ключи в session_state.
 """
 import streamlit as st
 import pandas as pd
@@ -33,10 +33,12 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
     st.caption(f"Роль: {current.role}")
 
     st.markdown('<div class="chat-input-container">', unsafe_allow_html=True)
-    user_input = st.text_area("✏️ Напишите сообщение...", height=80,
-                              key="chat_input", placeholder="Введите ваш вопрос...",
-                              label_visibility="collapsed")
-    col1, col2, col3, col4 = st.columns([1,1,1,3])
+    user_input = st.text_area(
+        "✏️ Напишите сообщение...", height=80,
+        key="chat_input", placeholder="Введите ваш вопрос...",
+        label_visibility="collapsed"
+    )
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 3])
     with col1:
         use_training = st.checkbox("📚 Обуч.", value=True, key="chat_use_training")
     with col2:
@@ -52,11 +54,12 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
     with col4:
         if st.button("🚀 Отправить", type="primary", use_container_width=True):
             if user_input.strip():
-                st.session_state.agent_messages.append({'role':'user', 'content': user_input.strip()})
-                st.session_state.chat_input = ""
+                st.session_state.agent_messages.append({'role': 'user', 'content': user_input.strip()})
+                # Безопасная очистка поля ввода
+                st.session_state.pop("chat_input", None)
                 with st.spinner("🤖 Агент думает..."):
                     response = current.generate_response(user_input.strip(), api_key, use_training)
-                st.session_state.agent_messages.append({'role':'agent', 'content': response})
+                st.session_state.agent_messages.append({'role': 'agent', 'content': response})
                 current.add_conversation(user_input.strip(), response)
                 agent_manager.save_agents()
                 st.rerun()
@@ -68,13 +71,15 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
     else:
         for msg in st.session_state.agent_messages:
             if msg['role'] == 'user':
-                st.markdown(f'<div class="chat-message-user"><strong>👤 Вы:</strong><br>{msg["content"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="chat-message-user"><strong>👤 Вы:</strong><br>{msg["content"]}</div>',
+                            unsafe_allow_html=True)
             else:
-                st.markdown(f'<div class="chat-message-agent"><strong>🤖 {current.name}:</strong><br>{msg["content"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="chat-message-agent"><strong>🤖 {current.name}:</strong><br>{msg["content"]}</div>',
+                            unsafe_allow_html=True)
 
     if st.session_state.get('voice_show_upload'):
         with st.expander("🎤 Голосовой ввод", expanded=True):
-            audio_file = st.file_uploader("Выберите аудио", type=["wav","mp3"], key="voice_upload")
+            audio_file = st.file_uploader("Выберите аудио", type=["wav", "mp3"], key="voice_upload")
             if audio_file:
                 recognized = recognize_speech_from_audio(audio_file.read())
                 if recognized:
@@ -120,7 +125,6 @@ def render_training_tab(agent_manager: AgentManager):
                 current.training_examples = [e for e in current.training_examples if e['id'] != ex['id']]
                 agent_manager.save_agents()
                 st.rerun()
-    # Массовое обучение
     with st.expander("📚 Массовое обучение (из текста)"):
         bulk = st.text_area("Вопрос -> Ответ (каждая строка)", height=150,
                             placeholder="Как анализировать? -> Для анализа...")
@@ -129,7 +133,7 @@ def render_training_tab(agent_manager: AgentManager):
             added = 0
             for line in lines:
                 if '->' in line:
-                    q, a = line.split('->',1)
+                    q, a = line.split('->', 1)
                     q, a = q.strip(), a.strip()
                     if q and a:
                         current.add_training_example(q, a)
@@ -155,7 +159,7 @@ def render_memory_tab(agent_manager: AgentManager):
             mem_key = st.text_input("Ключ", key="mem_key")
         with col2:
             mem_value = st.text_input("Значение", key="mem_value")
-        importance = st.selectbox("Важность", ["low","normal","high"], key="mem_importance")
+        importance = st.selectbox("Важность", ["low", "normal", "high"], key="mem_importance")
         if st.button("💾 Сохранить"):
             if mem_key and mem_value:
                 current.add_to_memory(mem_key, mem_value, importance)
@@ -164,13 +168,13 @@ def render_memory_tab(agent_manager: AgentManager):
                 st.rerun()
     st.markdown(f"### Факты ({len(current.memory)})")
     for mem in current.memory:
-        icon = "🔴" if mem['importance']=='high' else "🟡" if mem['importance']=='normal' else "🟢"
+        icon = "🔴" if mem['importance'] == 'high' else "🟡" if mem['importance'] == 'normal' else "🟢"
         st.markdown(f"""<div class="memory-box">
             {icon} **{mem['key']}** = {mem['value']}<br>
             <small>👁️ {mem['access_count']} | 📅 {mem['timestamp'][:10]}</small>
         </div>""", unsafe_allow_html=True)
         if st.button(f"🗑️", key=f"del_mem_{mem['key']}"):
-            current.memory = [m for m in current.memory if m['key']!=mem['key']]
+            current.memory = [m for m in current.memory if m['key'] != mem['key']]
             agent_manager.save_agents()
             st.rerun()
     if st.button("🗑️ Очистить память"):
@@ -187,15 +191,15 @@ def render_analytics_tab(agent_manager: AgentManager):
         st.warning("⚠️ Выберите агента")
         return
     st.subheader(f"📊 {current.name}")
-    c1,c2,c3,c4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
     with c1: st.markdown(f'<div class="stat-card"><h3>{current.stats["total_trainings"]}</h3><p>Обучений</p></div>', unsafe_allow_html=True)
     with c2: st.markdown(f'<div class="stat-card"><h3>{current.stats["total_conversations"]}</h3><p>Диалогов</p></div>', unsafe_allow_html=True)
     with c3: st.markdown(f'<div class="stat-card"><h3>{current.stats["success_rate"]:.0f}%</h3><p>Успешность</p></div>', unsafe_allow_html=True)
     with c4:
-        total = len(current.training_examples)+len(current.memory)
+        total = len(current.training_examples) + len(current.memory)
         st.markdown(f'<div class="stat-card"><h3>{total}</h3><p>Фактов</p></div>', unsafe_allow_html=True)
     if current.training_examples:
-        df = pd.DataFrame([{'Дата': ex['timestamp'][:10], 'Пример':i+1} for i,ex in enumerate(current.training_examples)])
+        df = pd.DataFrame([{'Дата': ex['timestamp'][:10], 'Пример': i + 1} for i, ex in enumerate(current.training_examples)])
         fig = px.line(df, x='Дата', y='Пример', title="Прогресс обучения")
         st.plotly_chart(fig, use_container_width=True)
     if current.conversation_history:
@@ -225,7 +229,7 @@ def render_conditions_tab():
             parsed = RussianConditionParser.parse(test)
             col_a, col_b = st.columns(2)
             with col_a: st.metric("Тип", parsed.get('type'))
-            with col_b: st.metric("Уверенность", f"{parsed.get('confidence',0)*100:.0f}%")
+            with col_b: st.metric("Уверенность", f"{parsed.get('confidence', 0) * 100:.0f}%")
             if parsed.get('code'):
                 st.success(f"💻 `{parsed['code']}`")
             else:
@@ -307,7 +311,7 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
                 elif block.get('status') == WorkflowStatus.ERROR.value:
                     cls = "workflow-node-error"
                 st.markdown(f"""<div class="workflow-node {cls}">
-                    <b>{block.get('name')}</b> <small>#{i+1}</small><br>
+                    <b>{block.get('name')}</b> <small>#{i + 1}</small><br>
                     <small>{block.get('type')}</small>
                 </div>""", unsafe_allow_html=True)
                 if i < len(st.session_state.workflow) - 1:
@@ -332,74 +336,48 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
 
 
 def _default_config(node_type: str) -> dict:
-    """Возвращает дефолтный конфиг с подсказками для каждого типа блока."""
     defaults = {
         NodeType.GOOGLE_SHEETS_READ.value: {
-            "sheet_url": "",
-            "sheet_name": "",
-            "range_a1": ""
+            "sheet_url": "", "sheet_name": "", "range_a1": ""
         },
         NodeType.EXCEL_READ.value: {
-            "file_path": "",
-            "sheet_name": 0
+            "file_path": "", "sheet_name": 0
         },
         NodeType.DEEPSEEK_AI.value: {
-            "system_prompt": "Ты полезный ассистент",
-            "user_prompt": "",
-            "temperature": 0.3
+            "system_prompt": "Ты полезный ассистент", "user_prompt": "", "temperature": 0.3
         },
         NodeType.CONDITION.value: {
             "condition": "если цена больше 1000"
         },
         NodeType.LOOP.value: {
-            "items": '["элемент1", "элемент2"]',
-            "batch_size": 10,
-            "action": "print(item)"
+            "items": '["элемент1", "элемент2"]', "batch_size": 10, "action": "print(item)"
         },
         NodeType.EMAIL.value: {
-            "to": "",
-            "subject": "Уведомление",
-            "body": "",
-            "attachments": ""
+            "to": "", "subject": "Уведомление", "body": "", "attachments": ""
         },
         NodeType.TELEGRAM.value: {
-            "chat_id": "",
-            "message": "",
-            "parse_mode": "HTML"
+            "chat_id": "", "message": "", "parse_mode": "HTML"
         },
         NodeType.AI_AGENT.value: {
-            "question": "Проанализируй данные",
-            "use_training": True
+            "question": "Проанализируй данные", "use_training": True
         },
         NodeType.DATA_CLEAN.value: {
-            "remove_duplicates": True,
-            "remove_empty": True,
-            "fill_na": "",
-            "fill_value": ""
+            "remove_duplicates": True, "remove_empty": True, "fill_na": "", "fill_value": ""
         },
         NodeType.PIVOT_TABLE.value: {
-            "index": "",
-            "columns": "",
-            "values": "",
-            "aggfunc": "sum"
+            "index": "", "columns": "", "values": "", "aggfunc": "sum"
         },
         NodeType.HTTP_GET.value: {
-            "url": "",
-            "headers": "{}",
-            "timeout": 30
+            "url": "", "headers": "{}", "timeout": 30
         },
         NodeType.HTTP_POST.value: {
-            "url": "",
-            "headers": "{}",
-            "body": "{}",
-            "timeout": 30
+            "url": "", "headers": "{}", "body": "{}", "timeout": 30
         },
     }
     return defaults.get(node_type, {})
 
 
 def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
-    """Расширенная настройка каждого типа блока."""
     cfg = block.get('config', {})
     btype = block.get('type')
 
@@ -438,8 +416,8 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
     elif btype == NodeType.TELEGRAM.value:
         cfg['chat_id'] = st.text_input("Chat ID", cfg.get('chat_id', ''), key=f"tg_chat_{idx}")
         cfg['message'] = st.text_area("Сообщение", cfg.get('message', ''), height=80, key=f"tg_msg_{idx}")
-        cfg['parse_mode'] = st.selectbox("Parse Mode", ["HTML","Markdown","None"],
-                                         index=["HTML","Markdown","None"].index(cfg.get('parse_mode','HTML')),
+        cfg['parse_mode'] = st.selectbox("Parse Mode", ["HTML", "Markdown", "None"],
+                                         index=["HTML", "Markdown", "None"].index(cfg.get('parse_mode', 'HTML')),
                                          key=f"tg_parse_{idx}")
 
     elif btype == NodeType.AI_AGENT.value:
@@ -458,7 +436,7 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
         cfg['index'] = st.text_input("Индекс (столбцы через запятую)", cfg.get('index', ''), key=f"pivot_idx_{idx}")
         cfg['columns'] = st.text_input("Колонки", cfg.get('columns', ''), key=f"pivot_col_{idx}")
         cfg['values'] = st.text_input("Значения", cfg.get('values', ''), key=f"pivot_val_{idx}")
-        cfg['aggfunc'] = st.selectbox("Агрегация", ["sum","mean","count","min","max"], index=0, key=f"pivot_agg_{idx}")
+        cfg['aggfunc'] = st.selectbox("Агрегация", ["sum", "mean", "count", "min", "max"], index=0, key=f"pivot_agg_{idx}")
 
     elif btype == NodeType.HTTP_GET.value:
         cfg['url'] = st.text_input("URL", cfg.get('url', ''), key=f"get_url_{idx}")
@@ -477,20 +455,23 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
 def _execute_workflow(agent_manager, api_key):
     progress = st.progress(0)
     status = st.empty()
+
     def update_progress(idx, node):
         progress.progress((idx + 1) / len(st.session_state.workflow))
         status.text(f"🔄 {node.get('name')}")
+
     table_manager = st.session_state.table_manager
     executor = WorkflowExecutor(st.session_state.workflow, api_key, agent_manager, table_manager)
     result = executor.execute(update_progress)
     progress.progress(1.0)
+
     if result['success']:
         st.balloons()
         st.success(f"✅ Workflow выполнен за {result['execution_time']:.1f}с")
         with st.expander("📋 Результаты", expanded=True):
             for res in result['results']:
                 st.markdown(f"**📌 {res['node']}**")
-                st.json({k:v for k,v in res['result'].items() if k!='df'})
+                st.json({k: v for k, v in res['result'].items() if k != 'df'})
     else:
         st.error(f"❌ Ошибка: {result.get('error')}")
 
@@ -517,7 +498,8 @@ def render_tables_tab(api_key: str):
                         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
                             table_manager.write_excel(df, tmp.name)
                             with open(tmp.name, 'rb') as f:
-                                st.download_button("📥 Скачать", f, f"{table_id}.xlsx", key=f"dl_saved_{table_id}", use_container_width=True)
+                                st.download_button("📥 Скачать", f, f"{table_id}.xlsx",
+                                                   key=f"dl_saved_{table_id}", use_container_width=True)
                     with col_c:
                         if st.button("🗑️ Удалить", key=f"del_saved_{table_id}", use_container_width=True):
                             del st.session_state.saved_tables[table_id]
@@ -530,7 +512,7 @@ def render_tables_tab(api_key: str):
     col_left, col_right = st.columns(2)
     with col_left:
         st.markdown("### 📥 Загрузка данных")
-        source = st.radio("Источник", ["Google Sheets","Excel"], key="table_source")
+        source = st.radio("Источник", ["Google Sheets", "Excel"], key="table_source")
         if source == "Google Sheets":
             url = st.text_input("URL", placeholder="https://docs.google.com/spreadsheets/d/...", key="gs_url_input")
             if st.button("📊 Загрузить из Google", use_container_width=True):
@@ -546,7 +528,7 @@ def render_tables_tab(api_key: str):
                             st.success(f"✅ Загружено: {df.shape}")
                             st.rerun()
         else:
-            uploaded = st.file_uploader("Excel или CSV", type=['xlsx','xls','csv'], key="excel_upload")
+            uploaded = st.file_uploader("Excel или CSV", type=['xlsx', 'xls', 'csv'], key="excel_upload")
             if uploaded:
                 with st.spinner("Чтение..."):
                     if uploaded.name.endswith('.csv'):
@@ -613,7 +595,7 @@ def render_tables_tab(api_key: str):
                                 result = table_manager.ai_analyze_dataframe(edited, instr, api_key)
                                 if 'error' not in result:
                                     st.success("✅ Анализ завершён")
-                                    st.markdown(f"**Анализ:** {result.get('analysis','')}")
+                                    st.markdown(f"**Анализ:** {result.get('analysis', '')}")
                                     if result.get('ready_code'):
                                         st.code(result['ready_code'], language='python')
                                         if st.button("💾 Применить код", key=f"apply_code_{st.session_state.editing_table_id}"):
@@ -641,7 +623,8 @@ def render_images_tab(api_key: str):
     if not image_manager:
         st.error("Менеджер изображений не инициализирован")
         return
-    tabs = st.tabs(["📥 Загрузка", "✏️ Ручное редактирование", "🤖 ИИ‑редактирование", "🎨 Массовая обработка", "💾 Результаты", "📊 Статистика"])
+    tabs = st.tabs(["📥 Загрузка", "✏️ Ручное редактирование", "🤖 ИИ‑редактирование",
+                    "🎨 Массовая обработка", "🧠 Массовая ИИ‑обработка", "💾 Результаты", "📊 Статистика"])
 
     with tabs[0]:
         st.markdown("### 📥 Массовая загрузка изображений")
@@ -653,12 +636,12 @@ def render_images_tab(api_key: str):
             status_text = st.empty()
             for i, file in enumerate(uploaded_files):
                 try:
-                    if file.size/(1024*1024) > CONFIG.MAX_IMAGE_SIZE_MB:
+                    if file.size / (1024 * 1024) > CONFIG.MAX_IMAGE_SIZE_MB:
                         st.warning(f"Файл {file.name} превышает {CONFIG.MAX_IMAGE_SIZE_MB}MB, пропущен")
                         continue
                     img = Image.open(file)
                     st.session_state.uploaded_images[file.name] = img
-                    progress_bar.progress((i+1)/len(uploaded_files))
+                    progress_bar.progress((i + 1) / len(uploaded_files))
                     status_text.text(f"Загрузка: {file.name} ({img.size[0]}x{img.size[1]})")
                 except Exception as e:
                     st.error(f"Ошибка: {e}")
@@ -668,7 +651,7 @@ def render_images_tab(api_key: str):
             if st.session_state.uploaded_images:
                 cols = st.columns(3)
                 for idx, (fn, img) in enumerate(list(st.session_state.uploaded_images.items())[:6]):
-                    with cols[idx%3]:
+                    with cols[idx % 3]:
                         st.image(img, caption=f"{fn} ({img.size[0]}x{img.size[1]})", use_container_width=True)
 
     with tabs[1]:
@@ -683,31 +666,32 @@ def render_images_tab(api_key: str):
                 with col1:
                     st.image(original, use_container_width=True, caption="Оригинал")
                 with col2:
-                    op = st.selectbox("Операция", [op.value for op in ImageEditOperation],
+                    op = st.selectbox("Операция", [e.value for e in ImageEditOperation],
                                       format_func=lambda x: {
-                                          'remove_background':'Удалить фон', 'remove_watermark':'Удалить вод.знак',
-                                          'resize':'Изменить размер', 'crop':'Обрезать', 'rotate':'Повернуть',
-                                          'enhance':'Улучшить', 'filter':'Фильтр', 'add_watermark':'Водяной знак',
-                                          'convert_format':'Формат'
-                                      }.get(x,x), key="manual_op")
+                                          'remove_background': 'Удалить фон', 'remove_watermark': 'Удалить вод.знак',
+                                          'resize': 'Изменить размер', 'crop': 'Обрезать', 'rotate': 'Повернуть',
+                                          'enhance': 'Улучшить', 'filter': 'Фильтр', 'add_watermark': 'Водяной знак',
+                                          'convert_format': 'Формат'
+                                      }.get(x, x), key="manual_op")
                     params = {}
                     if op == 'resize':
                         params['width'] = st.number_input("Ширина", value=original.size[0])
                         params['height'] = st.number_input("Высота", value=original.size[1])
                         params['maintain_aspect'] = st.checkbox("Сохранить пропорции", True)
                     elif op == 'enhance':
-                        params['brightness'] = st.slider("Яркость",0.0,2.0,1.0)
-                        params['contrast'] = st.slider("Контраст",0.0,2.0,1.0)
-                        params['sharpness'] = st.slider("Четкость",0.0,2.0,1.0)
+                        params['brightness'] = st.slider("Яркость", 0.0, 2.0, 1.0)
+                        params['contrast'] = st.slider("Контраст", 0.0, 2.0, 1.0)
+                        params['sharpness'] = st.slider("Четкость", 0.0, 2.0, 1.0)
                     elif op == 'filter':
-                        params['filter_type'] = st.selectbox("Фильтр", ['blur','sharpen','edge_enhance','contour','emboss','smooth','detail'])
+                        params['filter_type'] = st.selectbox("Фильтр", ['blur', 'sharpen', 'edge_enhance', 'contour',
+                                                                         'emboss', 'smooth', 'detail'])
                     elif op == 'add_watermark':
                         params['text'] = st.text_input("Текст", "Watermark")
-                        params['position'] = st.selectbox("Позиция", ['top-left','top-right','bottom-left','bottom-right'])
-                        params['font_size'] = st.slider("Размер шрифта",10,100,40)
-                        params['opacity'] = st.slider("Прозрачность",0,255,128)
+                        params['position'] = st.selectbox("Позиция", ['top-left', 'top-right', 'bottom-left', 'bottom-right'])
+                        params['font_size'] = st.slider("Размер шрифта", 10, 100, 40)
+                        params['opacity'] = st.slider("Прозрачность", 0, 255, 128)
                     elif op == 'convert_format':
-                        params['format'] = st.selectbox("Формат", ['PNG','JPEG','WEBP','BMP'])
+                        params['format'] = st.selectbox("Формат", ['PNG', 'JPEG', 'WEBP', 'BMP'])
                     if st.button("🚀 Применить", type="primary", key="manual_apply"):
                         try:
                             processed = image_manager._apply_operation(original, ImageEditOperation(op), params)
@@ -726,14 +710,17 @@ def render_images_tab(api_key: str):
             if selected_ai:
                 img = st.session_state.uploaded_images[selected_ai]
                 st.image(img, caption="Исходное изображение", use_container_width=True)
-                instruction = st.text_area("Что нужно сделать?", placeholder="Пример: удали фон, поверни на 45 градусов, сделай черно-белым и добавь водяной знак 'Фото'", height=80, key="ai_instruction")
+                instruction = st.text_area("Что нужно сделать?", placeholder="Пример: удали фон, поверни на 45 градусов, сделай черно-белым и добавь водяной знак 'Фото'",
+                                           height=80, key="ai_instruction")
                 if st.button("🤖 Обработать с ИИ", type="primary", use_container_width=True):
                     if not instruction.strip():
                         st.warning("Введите инструкцию")
+                    elif not api_key:
+                        st.error("Введите API-ключ в боковой панели")
                     else:
                         with st.spinner("ИИ думает и применяет операции..."):
                             try:
-                                processed_ai = image_manager.apply_ai_edits(img, instruction)
+                                processed_ai = image_manager.apply_ai_edits(img, instruction, api_key=api_key)
                                 st.session_state.processed_images[f"ai_{selected_ai}"] = processed_ai
                                 st.success("✅ ИИ‑редактирование выполнено!")
                                 st.image(processed_ai, caption="Результат ИИ", use_container_width=True)
@@ -741,31 +728,31 @@ def render_images_tab(api_key: str):
                                 st.error(f"❌ Ошибка ИИ‑редактирования: {e}")
 
     with tabs[3]:
-        st.markdown("### 🎨 Массовая обработка")
+        st.markdown("### 🎨 Массовая обработка (одинаковая операция)")
         if not st.session_state.uploaded_images:
             st.info("Сначала загрузите изображения")
         else:
             st.markdown(f"Доступно: {len(st.session_state.uploaded_images)}")
-            bop = st.selectbox("Операция для всех", [op.value for op in ImageEditOperation],
+            bop = st.selectbox("Операция для всех", [e.value for e in ImageEditOperation],
                                format_func=lambda x: {
-                                   'remove_background':'Удалить фон', 'remove_watermark':'Удалить вод.знак',
-                                   'resize':'Изменить размер', 'enhance':'Улучшить', 'convert_format':'Конвертировать'
-                               }.get(x,x), key="batch_operation")
+                                   'remove_background': 'Удалить фон', 'remove_watermark': 'Удалить вод.знак',
+                                   'resize': 'Изменить размер', 'enhance': 'Улучшить', 'convert_format': 'Конвертировать'
+                               }.get(x, x), key="batch_operation")
             bparams = {}
             if bop == 'resize':
                 bparams['width'] = st.number_input("Ширина", value=800)
                 bparams['height'] = st.number_input("Высота", value=600)
                 bparams['maintain_aspect'] = st.checkbox("Сохранять пропорции", True)
             elif bop == 'enhance':
-                bparams['brightness'] = st.slider("Яркость",0.0,2.0,1.0)
-                bparams['contrast'] = st.slider("Контраст",0.0,2.0,1.0)
+                bparams['brightness'] = st.slider("Яркость", 0.0, 2.0, 1.0)
+                bparams['contrast'] = st.slider("Контраст", 0.0, 2.0, 1.0)
             elif bop == 'convert_format':
-                bparams['format'] = st.selectbox("Формат", ['PNG','JPEG','WEBP'])
+                bparams['format'] = st.selectbox("Формат", ['PNG', 'JPEG', 'WEBP'])
             if st.button("🚀 Обработать все", type="primary"):
                 progress = st.progress(0)
                 status = st.empty()
                 def update_progress(current, total, filename):
-                    progress.progress(current/total)
+                    progress.progress(current / total)
                     status.text(f"{filename} ({current}/{total})")
                 results = image_manager.process_batch(list(st.session_state.uploaded_images.items()),
                                                       ImageEditOperation(bop), bparams, update_progress)
@@ -780,17 +767,50 @@ def render_images_tab(api_key: str):
                     st.success(f"Сохранено в {IMAGES_DIR}")
 
     with tabs[4]:
+        st.markdown("### 🧠 Массовая ИИ‑обработка (единая инструкция)")
+        if not st.session_state.uploaded_images:
+            st.info("Сначала загрузите изображения")
+        else:
+            st.markdown(f"Будет обработано **{len(st.session_state.uploaded_images)}** изображений")
+            instruction_mass = st.text_area("Единая инструкция для всех изображений",
+                                            placeholder="Пример: удали фон и добавь водяной знак 'Мой бренд'",
+                                            height=80, key="mass_ai_instruction")
+            if st.button("🤖 Применить ко всем", type="primary", use_container_width=True):
+                if not instruction_mass.strip():
+                    st.warning("Введите инструкцию")
+                elif not api_key:
+                    st.error("Введите API-ключ в боковой панели")
+                else:
+                    progress = st.progress(0)
+                    status = st.empty()
+                    def update_progress(current, total, filename):
+                        progress.progress(current / total)
+                        status.text(f"ИИ‑обработка: {filename} ({current}/{total})")
+                    images_list = list(st.session_state.uploaded_images.items())
+                    try:
+                        results = image_manager.batch_ai_edit(images_list, instruction_mass,
+                                                              api_key=api_key, progress_callback=update_progress)
+                        for fn, img in results:
+                            if img:
+                                st.session_state.processed_images[f"mass_ai_{fn}"] = img
+                        progress.empty()
+                        status.empty()
+                        st.success(f"Обработано {len(results)} изображений")
+                    except Exception as e:
+                        st.error(f"❌ Ошибка: {e}")
+
+    with tabs[5]:
         st.markdown("### 💾 Сохранённые результаты")
         if not st.session_state.processed_images:
             st.info("Нет обработанных изображений")
         else:
             cols = st.columns(3)
             for idx, (fn, img) in enumerate(st.session_state.processed_images.items()):
-                with cols[idx%3]:
+                with cols[idx % 3]:
                     st.image(img, caption=fn, use_container_width=True)
                     cs, cd, cx = st.columns(3)
                     with cs:
-                        if st.button("💾", key=f"save_res_{idx}"): img.save(IMAGES_DIR/fn); st.success("✅")
+                        if st.button("💾", key=f"save_res_{idx}"): img.save(IMAGES_DIR / fn); st.success("✅")
                     with cd:
                         buf = BytesIO(); img.save(buf, format='PNG')
                         st.download_button("📥", buf, fn, "image/png", key=f"dl_res_{idx}")
@@ -801,13 +821,13 @@ def render_images_tab(api_key: str):
                     if img: img.save(IMAGES_DIR / fn)
                 st.success(f"Сохранено в {IMAGES_DIR}")
 
-    with tabs[5]:
+    with tabs[6]:
         st.markdown("### 📊 Статистика")
-        c1,c2,c3,c4 = st.columns(4)
+        c1, c2, c3, c4 = st.columns(4)
         with c1: st.metric("Загружено", len(st.session_state.uploaded_images))
         with c2: st.metric("Обработано", len(st.session_state.processed_images))
         with c3:
-            total_px = sum(img.size[0]*img.size[1] for img in st.session_state.uploaded_images.values())
+            total_px = sum(img.size[0] * img.size[1] for img in st.session_state.uploaded_images.values())
             st.metric("Общий размер", f"{total_px:,} px")
         with c4:
             disk = sum(1 for _ in IMAGES_DIR.glob("*")) if IMAGES_DIR.exists() else 0
@@ -815,9 +835,9 @@ def render_images_tab(api_key: str):
         if st.session_state.uploaded_images:
             fmt_counts = {}
             for fn in st.session_state.uploaded_images:
-                ext = fn.rsplit('.',1)[-1].upper()
-                fmt_counts[ext] = fmt_counts.get(ext,0)+1
-            df_fmt = pd.DataFrame({'Формат':list(fmt_counts.keys()), 'Количество':list(fmt_counts.values())})
+                ext = fn.rsplit('.', 1)[-1].upper()
+                fmt_counts[ext] = fmt_counts.get(ext, 0) + 1
+            df_fmt = pd.DataFrame({'Формат': list(fmt_counts.keys()), 'Количество': list(fmt_counts.values())})
             fig = px.pie(df_fmt, values='Количество', names='Формат', title="По форматам")
             st.plotly_chart(fig, use_container_width=True)
 
