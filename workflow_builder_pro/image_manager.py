@@ -1,3 +1,6 @@
+
+### 📄 image_manager.py (полный код с ленивым импортом `rembg`)
+```python
 """
 Менеджер для массовой обработки изображений с ИИ.
 """
@@ -13,12 +16,6 @@ from openai import OpenAI
 from config import CONFIG, IMAGES_DIR
 from utils import handle_errors, image_to_base64, ImageEditOperation
 
-# Попытка импорта rembg
-try:
-    from rembg import remove
-except ImportError:
-    remove = None
-
 logger = logging.getLogger(__name__)
 
 
@@ -32,7 +29,9 @@ class ImageManager:
         
     def remove_background(self, image: Image.Image) -> Image.Image:
         """Удаляет фон с изображения используя rembg"""
-        if remove is None:
+        try:
+            from rembg import remove
+        except ImportError:
             raise ImportError("Установите rembg: pip install rembg")
         
         img_byte_arr = BytesIO()
@@ -99,15 +98,12 @@ class ImageManager:
         if brightness != 1.0:
             enhancer = ImageEnhance.Brightness(image)
             image = enhancer.enhance(brightness)
-        
         if contrast != 1.0:
             enhancer = ImageEnhance.Contrast(image)
             image = enhancer.enhance(contrast)
-        
         if sharpness != 1.0:
             enhancer = ImageEnhance.Sharpness(image)
             image = enhancer.enhance(sharpness)
-        
         return image
     
     def apply_filter(self, image: Image.Image, filter_type: str) -> Image.Image:
@@ -121,7 +117,6 @@ class ImageManager:
             'smooth': ImageFilter.SMOOTH,
             'detail': ImageFilter.DETAIL,
         }
-        
         if filter_type in filters:
             return image.filter(filters[filter_type])
         return image
@@ -141,7 +136,6 @@ class ImageManager:
             font = ImageFont.load_default()
         
         draw = ImageDraw.Draw(txt_layer)
-        
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -178,44 +172,28 @@ class ImageManager:
         
         try:
             client = OpenAI(api_key=self.api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
-            
             img_base64 = image_to_base64(image)
             
             prompt = f"""
 Ты эксперт по редактированию изображений.
-
 Инструкция: {instruction}
-
 Предложи параметры для редактирования в формате JSON:
 {{
-    "operations": [
-        {{
-            "type": "resize|crop|enhance|filter",
-            "params": {{...}}
-        }}
-    ],
+    "operations": [{{"type": "resize|crop|enhance|filter", "params": {{...}}}}],
     "description": "что будет сделано"
 }}
 """
-            
             response = client.chat.completions.create(
                 model=CONFIG.DEEPSEEK_MODEL,
-                messages=[
-                    {"role": "system", "content": "Ты эксперт по обработке изображений."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.3,
-                timeout=CONFIG.API_TIMEOUT,
-                max_tokens=CONFIG.MAX_TOKENS
+                messages=[{"role": "system", "content": "Ты эксперт по обработке изображений."},
+                          {"role": "user", "content": prompt}],
+                temperature=0.3
             )
-            
             content = response.choices[0].message.content
             json_match = re.search(r'\{[\s\S]*\}', content)
             if json_match:
                 return json.loads(json_match.group())
-            
             return {'error': 'Не удалось получить ответ от ИИ'}
-            
         except Exception as e:
             return {'error': f'Ошибка ИИ: {str(e)}'}
     
@@ -232,15 +210,12 @@ class ImageManager:
             try:
                 processed = self._apply_operation(image, operation, params)
                 results.append((filename, processed))
-                
                 self.processed_count += 1
                 if progress_callback:
                     progress_callback(self.processed_count, self.total_count, filename)
-                    
             except Exception as e:
                 logger.error(f"Ошибка обработки {filename}: {e}")
                 results.append((filename, None))
-        
         return results
     
     def _apply_operation(self, image: Image.Image, operation: ImageEditOperation, 
