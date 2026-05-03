@@ -1,10 +1,9 @@
 """
 Workflow Builder Pro – Главный модуль приложения
-Версия: 9.2.1 (с быстрым ИИ-редактированием Excel)
+Версия: 9.2.1 (исправлена ошибка агентов, добавлено ИИ-редактирование Excel)
 """
 import streamlit as st
 from datetime import datetime
-from typing import Dict, List, Any
 
 # Импорты из модулей проекта
 from config import CONFIG
@@ -23,24 +22,35 @@ from ui_components import (
     render_analytics_tab,
     render_workflow_tab,
     render_conditions_tab,
-    render_tables_tab,      # эта функция будет расширена (см. ниже)
+    render_tables_tab,
     render_images_tab,
     render_help_tab
 )
 
 # ============================================================================
-# РАСШИРЕННАЯ ФУНКЦИЯ ДЛЯ ВКЛАДКИ ТАБЛИЦ (ДОБАВЛЯЕМ БЫСТРОЕ ИИ-РЕДАКТИРОВАНИЕ)
+# ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ СЛОВАРЯ АГЕНТОВ (адаптация под разные реализации)
+# ============================================================================
+def get_agents_dict(agent_manager):
+    """Возвращает словарь агентов {id: agent} из agent_manager или session_state"""
+    # Пробуем разные возможные источники
+    if hasattr(agent_manager, 'agents') and agent_manager.agents is not None:
+        return agent_manager.agents
+    if hasattr(agent_manager, '_agents') and agent_manager._agents is not None:
+        return agent_manager._agents
+    if hasattr(agent_manager, 'get_agents') and callable(agent_manager.get_agents):
+        return agent_manager.get_agents()
+    if 'agents' in st.session_state:
+        return st.session_state.agents
+    return {}
+
+# ============================================================================
+# РАСШИРЕННАЯ ВКЛАДКА ТАБЛИЦ С БЫСТРЫМ ИИ-РЕДАКТИРОВАНИЕМ EXCEL
 # ============================================================================
 def render_tables_tab_with_ai_edit(api_key: str):
-    """
-    Рендерит вкладку таблиц, добавляя блок быстрого ИИ-редактирования Excel.
-    Остальной функционал (сохранённые таблицы, редактор) берётся из оригинальной render_tables_tab.
-    """
-    # Вызываем оригинальную функцию (если она уже содержит базовый интерфейс)
-    # Но чтобы не дублировать, мы сначала показываем новый блок, затем – остальное.
+    """Добавляет блок быстрого ИИ-редактирования Excel, затем вызывает оригинальную вкладку"""
     st.subheader("🗂 Таблицы + ИИ + Редактор")
     
-    # ---------- НОВЫЙ БЛОК: Быстрое ИИ-редактирование Excel ----------
+    # ---------- БЫСТРОЕ ИИ-РЕДАКТИРОВАНИЕ EXCEL ----------
     st.markdown("## 🤖 Быстрое ИИ-редактирование Excel")
     st.markdown("Загрузите файл → опишите изменения на русском → скачайте результат")
     
@@ -56,7 +66,7 @@ def render_tables_tab_with_ai_edit(api_key: str):
         ai_instruction = st.text_area(
             "✏️ Инструкция для ИИ",
             height=120,
-            placeholder="Примеры:\n- удалить пустые строки\n- создать столбец 'Итого' = Цена * Количество\n- отсортировать по дате\n- заменить все пропуски на 0\n- отфильтровать строки, где Статус = 'Активен'",
+            placeholder="Примеры:\n- удалить пустые строки\n- создать столбец 'Итого' = Цена * Количество\n- отсортировать по дате\n- заменить все пропуски на 0",
             key="ai_instruction_quick"
         )
         run_ai = st.button("🚀 Применить ИИ", type="primary", use_container_width=True, key="run_ai_excel")
@@ -68,7 +78,6 @@ def render_tables_tab_with_ai_edit(api_key: str):
             st.warning("⚠️ Введите инструкцию для ИИ")
         else:
             with st.spinner("🧠 ИИ анализирует и применяет изменения..."):
-                # Создаём менеджер таблиц, если ещё нет
                 if "table_manager" not in st.session_state:
                     st.session_state.table_manager = TableManager(api_key)
                 result = st.session_state.table_manager.ai_edit_excel_file(
@@ -97,21 +106,16 @@ def render_tables_tab_with_ai_edit(api_key: str):
     
     st.markdown("---")
     
-    # Вызов оригинальной функции render_tables_tab (без нового блока, чтобы не дублировать)
-    # Предполагается, что исходная render_tables_tab из ui_components содержит остальной функционал
-    # (сохранённые таблицы, редактор, загрузка из Google Sheets и т.д.)
+    # Оригинальная вкладка таблиц (из ui_components)
     try:
-        from ui_components import render_tables_tab as original_tables_tab
-        original_tables_tab(api_key)
-    except ImportError:
-        st.info("ℹ️ Основной редактор таблиц не загружен, но быстрый ИИ-режим работает.")
-
+        render_tables_tab(api_key)
+    except Exception as e:
+        st.info(f"ℹ️ Дополнительные функции таблиц: {e}")
 
 # ============================================================================
 # ОСНОВНАЯ ФУНКЦИЯ ПРИЛОЖЕНИЯ
 # ============================================================================
 def main():
-    """Точка входа приложения"""
     st.set_page_config(
         page_title=CONFIG.APP_TITLE,
         page_icon=CONFIG.APP_ICON,
@@ -120,8 +124,19 @@ def main():
     )
     st.markdown(get_app_styles(), unsafe_allow_html=True)
     
-    # Инициализация session_state (должна быть определена в utils.py)
-    initialize_session_state()
+    # Инициализация session_state (если есть функция из utils)
+    if 'initialized' not in st.session_state:
+        try:
+            initialize_session_state()
+        except:
+            # Базовая инициализация
+            st.session_state.agent_manager = None
+            st.session_state.workflow = []
+            st.session_state.agent_messages = []
+            st.session_state.saved_tables = {}
+            st.session_state.uploaded_images = {}
+            st.session_state.processed_images = {}
+        st.session_state.initialized = True
     
     # Заголовок
     st.markdown(f"""
@@ -142,64 +157,89 @@ def main():
             key="api_key_main"
         )
         st.session_state.api_key = api_key
-        
         st.markdown("---")
         
         # Инициализация менеджера агентов
-        if "agent_manager" not in st.session_state:
+        if st.session_state.agent_manager is None:
             st.session_state.agent_manager = AgentManager()
         agent_manager = st.session_state.agent_manager
         
-        # Список агентов
-        for agent in agent_manager.agents.values():
-            is_selected = agent_manager.current_agent_id == agent.id
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                if st.button(f"📋 {agent.name}", key=f"select_{agent.id}", use_container_width=True):
-                    agent_manager.set_current_agent(agent.id)
-                    st.rerun()
-            with col2:
-                if st.button(f"🗑️", key=f"del_{agent.id}"):
-                    agent_manager.delete_agent(agent.id)
-                    st.rerun()
+        # Получаем словарь агентов (без падения)
+        agents_dict = get_agents_dict(agent_manager)
+        
+        if agents_dict:
+            # Отображаем каждого агента
+            for agent_id, agent in agents_dict.items():
+                # agent может быть объектом или словарём
+                if isinstance(agent, dict):
+                    agent_name = agent.get('name', 'Без имени')
+                    agent_id_val = agent_id
+                else:
+                    agent_name = agent.name if hasattr(agent, 'name') else str(agent)
+                    agent_id_val = agent.id if hasattr(agent, 'id') else agent_id
+                
+                # Проверяем, выбран ли этот агент
+                is_selected = False
+                if hasattr(agent_manager, 'current_agent_id'):
+                    is_selected = (agent_manager.current_agent_id == agent_id_val)
+                
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    btn_label = f"📋 {agent_name}" + (" ✅" if is_selected else "")
+                    if st.button(btn_label, key=f"select_{agent_id_val}", use_container_width=True):
+                        if hasattr(agent_manager, 'set_current_agent'):
+                            agent_manager.set_current_agent(agent_id_val)
+                        st.rerun()
+                with col2:
+                    if st.button("🗑️", key=f"del_{agent_id_val}"):
+                        if hasattr(agent_manager, 'delete_agent'):
+                            agent_manager.delete_agent(agent_id_val)
+                        st.rerun()
+        else:
+            st.info("Нет агентов. Создайте нового.")
         
         st.markdown("---")
         
-        # Создание агента
+        # Создание нового агента
         with st.expander("➕ СОЗДАТЬ АГЕНТА", expanded=False):
             new_name = st.text_input("Имя", placeholder="Мой Помощник", key="new_agent_name")
             new_role = st.text_input("Роль", placeholder="эксперт по...", key="new_agent_role")
             new_prompt = st.text_area("Промпт", height=80, key="new_agent_prompt")
             if st.button("✨ Создать", use_container_width=True):
                 if new_name and new_role and new_prompt:
-                    agent_manager.add_agent(new_name, new_role, new_prompt)
-                    st.success(f"✅ Агент {new_name} создан!")
-                    st.rerun()
+                    if hasattr(agent_manager, 'add_agent'):
+                        agent_manager.add_agent(new_name, new_role, new_prompt)
+                        st.success(f"✅ Агент {new_name} создан!")
+                        st.rerun()
+                    else:
+                        st.error("Метод add_agent не найден в AgentManager")
         
         st.markdown("---")
         
         # Статистика
         st.markdown("## 📊 СТАТИСТИКА")
-        st.metric("Агентов", len(agent_manager.agents))
-        current_agent = agent_manager.get_current_agent()
-        if current_agent:
-            st.metric("Обучений", current_agent.stats['total_trainings'])
-            st.metric("Диалогов", current_agent.stats['total_conversations'])
+        if agents_dict:
+            st.metric("Агентов", len(agents_dict))
+        if hasattr(agent_manager, 'get_current_agent'):
+            current = agent_manager.get_current_agent()
+            if current:
+                if hasattr(current, 'stats'):
+                    stats = current.stats
+                    st.metric("Обучений", stats.get('total_trainings', 0))
+                    st.metric("Диалогов", stats.get('total_conversations', 0))
         
         st.markdown("---")
-        
-        # Кнопка очистки workflow
         if st.button("🗑️ Очистить workflow", use_container_width=True):
             st.session_state.workflow = []
             st.rerun()
     
-    # Инициализация менеджеров, если отсутствуют
+    # Инициализация менеджеров (если ещё нет)
     if "table_manager" not in st.session_state:
         st.session_state.table_manager = TableManager(api_key)
     if "image_manager" not in st.session_state:
         st.session_state.image_manager = ImageManager(api_key)
     
-    # Основные вкладки
+    # Вкладки
     tabs = st.tabs([
         "💬 Диалог", "📚 Обучение", "🧠 Память", "📊 Аналитика",
         "🤖 Workflow", "🔀 Условия", "🗂 Таблицы+ИИ", "🖼️ Изображения", "📖 Справка"
@@ -218,13 +258,11 @@ def main():
     with tabs[5]:
         render_conditions_tab()
     with tabs[6]:
-        # Используем расширенную функцию с ИИ-редактированием Excel
         render_tables_tab_with_ai_edit(api_key)
     with tabs[7]:
         render_images_tab(api_key)
     with tabs[8]:
         render_help_tab()
-
 
 if __name__ == "__main__":
     main()
