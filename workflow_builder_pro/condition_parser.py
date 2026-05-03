@@ -7,8 +7,6 @@ from config import ConditionType
 
 
 class RussianConditionParser:
-    """Преобразует условия на русском языке в исполняемый код."""
-    
     PATTERNS: Dict[str, str] = {
         'greater': r'(.+?)\s+(больше|выше|превышает|>)\s+(.+)',
         'less': r'(.+?)\s+(меньше|ниже|<)\s+(.+)',
@@ -46,9 +44,7 @@ class RussianConditionParser:
     
     @classmethod
     def parse(cls, condition_text: str) -> Dict[str, Any]:
-        """Преобразует русское условие в структурированный формат"""
         condition_text = condition_text.lower().strip()
-        
         result: Dict[str, Any] = {
             'original': condition_text,
             'type': ConditionType.CUSTOM.value,
@@ -60,11 +56,9 @@ class RussianConditionParser:
             'errors': [],
             'confidence': 0.0
         }
-        
         if 'если' in condition_text:
             result = cls._parse_if_statement(condition_text, result)
             return result
-        
         for pattern_type, pattern in cls.PATTERNS.items():
             match = re.search(pattern, condition_text, re.IGNORECASE)
             if match:
@@ -76,51 +70,40 @@ class RussianConditionParser:
                 result['variables'] = cls._extract_variables(condition_text)
                 result['confidence'] = 0.9
                 break
-        
         if result['code'] is None:
             result['code'], result['errors'] = cls._fallback_parse(condition_text)
             result['confidence'] = 0.5 if result['code'] else 0.0
-        
         return result
     
     @classmethod
     def _parse_if_statement(cls, text: str, result: Dict) -> Dict:
-        """Парсит конструкцию если-то-иначе"""
         text = re.sub(r'^если\s+', '', text)
-        
         then_part = None
         else_part = None
-        
         if 'иначе' in text:
             parts = re.split(r'\s+иначе\s+', text)
             text = parts[0]
             else_part = parts[1] if len(parts) > 1 else None
-        
         if ' то ' in text:
             parts = text.split(' то ', 1)
             condition = parts[0]
             then_part = parts[1] if len(parts) > 1 else None
         else:
             condition = text
-        
         result['type'] = 'if_else' if else_part else 'if_then'
         result['condition'] = condition.strip()
         result['then_action'] = then_part.strip() if then_part else None
         result['else_action'] = else_part.strip() if else_part else None
-        
         cond_code = cls._to_python_expr('custom', (condition,))
         result['code'] = f"if {cond_code}:\n    # {then_part or 'действие'}"
         if else_part:
             result['code'] += f"\nelse:\n    # {else_part}"
-        
         result['variables'] = cls._extract_variables(condition)
         result['confidence'] = 0.85
-        
         return result
     
     @classmethod
     def _generate_code(cls, pattern_type: str, groups: tuple) -> Optional[str]:
-        """Генерирует Python-код из распознанного паттерна"""
         templates = {
             'greater': lambda g: f"if {g[0].strip()} > {g[2].strip()}:",
             'less': lambda g: f"if {g[0].strip()} < {g[2].strip()}:",
@@ -138,7 +121,6 @@ class RussianConditionParser:
     
     @classmethod
     def _to_python_expr(cls, pattern_type: str, groups: tuple) -> str:
-        """Преобразует условие в Python-выражение (без if)"""
         exprs = {
             'greater': lambda g: f"{g[0].strip()} > {g[2].strip()}",
             'less': lambda g: f"{g[0].strip()} < {g[2].strip()}",
@@ -151,7 +133,6 @@ class RussianConditionParser:
     
     @classmethod
     def _extract_variables(cls, text: str) -> List[str]:
-        """Извлекает имена переменных из условия"""
         vars_found = re.findall(r'\{\{(\w+)\}\}', text)
         if not vars_found:
             words = re.findall(r'\b[a-zA-Zа-яА-ЯёЁ_][a-zA-Zа-яА-яЁё0-9_]*\b', text)
@@ -161,18 +142,13 @@ class RussianConditionParser:
     
     @classmethod
     def _fallback_parse(cls, text: str) -> Tuple[Optional[str], List[str]]:
-        """Резервный парсер для нераспознанных условий"""
         errors: List[str] = []
-        
         for rus, eng in cls.OPERATOR_MAP.items():
             text = re.sub(rf'\b{rus}\b', eng, text, flags=re.IGNORECASE)
-        
         text = re.sub(r'\{\{(\w+)\}\}', r'data.get("\1", None)', text)
-        
         try:
             compile(text, '<string>', 'eval')
             return text, errors
         except SyntaxError as e:
             errors.append(f"Синтаксическая ошибка: {e}")
-        
         return None, errors
