@@ -460,7 +460,8 @@ def render_images_tab(api_key: str):
     if not image_manager:
         st.error("Менеджер изображений не инициализирован")
         return
-    tabs = st.tabs(["📥 Загрузка", "✏️ Редактирование", "🎨 Массовая обработка", "💾 Результаты", "📊 Статистика"])
+    tabs = st.tabs(["📥 Загрузка", "✏️ Ручное редактирование", "🤖 ИИ‑редактирование", "🎨 Массовая обработка", "💾 Результаты", "📊 Статистика"])
+
     with tabs[0]:
         st.markdown("### 📥 Массовая загрузка изображений")
         st.info(f"До {CONFIG.MAX_IMAGE_UPLOAD} файлов, форматы: {', '.join(CONFIG.SUPPORTED_IMAGE_FORMATS)}")
@@ -488,27 +489,31 @@ def render_images_tab(api_key: str):
                 for idx, (fn, img) in enumerate(list(st.session_state.uploaded_images.items())[:6]):
                     with cols[idx%3]:
                         st.image(img, caption=f"{fn} ({img.size[0]}x{img.size[1]})", use_container_width=True)
+
     with tabs[1]:
-        st.markdown("### ✏️ Редактирование")
+        st.markdown("### ✏️ Ручное редактирование")
         if not st.session_state.uploaded_images:
             st.info("Загрузите изображения")
         else:
-            selected = st.selectbox("Выберите изображение", list(st.session_state.uploaded_images.keys()), key="edit_select")
+            selected = st.selectbox("Выберите изображение", list(st.session_state.uploaded_images.keys()), key="manual_edit_select")
             if selected:
                 original = st.session_state.uploaded_images[selected]
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.markdown("#### Оригинал")
-                    st.image(original, use_container_width=True)
+                    st.image(original, use_container_width=True, caption="Оригинал")
                 with col2:
-                    st.markdown("#### Операции")
                     op = st.selectbox("Операция", [op.value for op in ImageEditOperation],
                                       format_func=lambda x: {
-                                          'remove_background':'Удалить фон','remove_watermark':'Удалить вод.знак',
-                                          'resize':'Изменить размер','crop':'Обрезать','rotate':'Повернуть',
-                                          'enhance':'Улучшить','filter':'Фильтр','add_watermark':'Добавить вод.знак',
-                                          'convert_format':'Конвертировать'
-                                      }.get(x,x), key="edit_operation")
+                                          'remove_background':'Удалить фон',
+                                          'remove_watermark':'Удалить вод.знак',
+                                          'resize':'Изменить размер',
+                                          'crop':'Обрезать',
+                                          'rotate':'Повернуть',
+                                          'enhance':'Улучшить',
+                                          'filter':'Фильтр',
+                                          'add_watermark':'Водяной знак',
+                                          'convert_format':'Формат'
+                                      }.get(x,x), key="manual_op")
                     params = {}
                     if op == 'resize':
                         params['width'] = st.number_input("Ширина", value=original.size[0])
@@ -527,19 +532,39 @@ def render_images_tab(api_key: str):
                         params['opacity'] = st.slider("Прозрачность",0,255,128)
                     elif op == 'convert_format':
                         params['format'] = st.selectbox("Формат", ['PNG','JPEG','WEBP','BMP'])
-                    if st.button("🚀 Применить", type="primary"):
+                    if st.button("🚀 Применить", type="primary", key="manual_apply"):
                         try:
                             processed = image_manager._apply_operation(original, ImageEditOperation(op), params)
-                            st.session_state.processed_images[f"edited_{selected}"] = processed
+                            st.session_state.processed_images[f"manual_{selected}"] = processed
                             st.success("✅ Обработано!")
                             st.image(processed, caption="Результат", use_container_width=True)
-                            if st.button("💾 Сохранить результат"):
-                                save_path = IMAGES_DIR / f"edited_{selected}"
-                                processed.save(save_path)
-                                st.success(f"Сохранено в {save_path}")
                         except Exception as e:
                             st.error(f"❌ {e}")
+
     with tabs[2]:
+        st.markdown("### 🤖 ИИ‑редактирование (по описанию)")
+        if not st.session_state.uploaded_images:
+            st.info("Загрузите изображения")
+        else:
+            selected_ai = st.selectbox("Изображение для ИИ", list(st.session_state.uploaded_images.keys()), key="ai_edit_select")
+            if selected_ai:
+                img = st.session_state.uploaded_images[selected_ai]
+                st.image(img, caption="Исходное изображение", use_container_width=True)
+                instruction = st.text_area("Что нужно сделать?", placeholder="Пример: удали фон, поверни на 45 градусов, сделай черно-белым и добавь водяной знак 'Фото'", height=80, key="ai_instruction")
+                if st.button("🤖 Обработать с ИИ", type="primary", use_container_width=True):
+                    if not instruction.strip():
+                        st.warning("Введите инструкцию")
+                    else:
+                        with st.spinner("ИИ думает и применяет операции..."):
+                            try:
+                                processed_ai = image_manager.apply_ai_edits(img, instruction)
+                                st.session_state.processed_images[f"ai_{selected_ai}"] = processed_ai
+                                st.success("✅ ИИ‑редактирование выполнено!")
+                                st.image(processed_ai, caption="Результат ИИ", use_container_width=True)
+                            except Exception as e:
+                                st.error(f"❌ Ошибка ИИ‑редактирования: {e}")
+
+    with tabs[3]:
         st.markdown("### 🎨 Массовая обработка")
         if not st.session_state.uploaded_images:
             st.info("Сначала загрузите изображения")
@@ -547,8 +572,11 @@ def render_images_tab(api_key: str):
             st.markdown(f"Доступно: {len(st.session_state.uploaded_images)}")
             bop = st.selectbox("Операция для всех", [op.value for op in ImageEditOperation],
                                format_func=lambda x: {
-                                   'remove_background':'Удалить фон','remove_watermark':'Удалить вод.знак',
-                                   'resize':'Изменить размер','enhance':'Улучшить','convert_format':'Конвертировать'
+                                   'remove_background':'Удалить фон',
+                                   'remove_watermark':'Удалить вод.знак',
+                                   'resize':'Изменить размер',
+                                   'enhance':'Улучшить',
+                                   'convert_format':'Конвертировать'
                                }.get(x,x), key="batch_operation")
             bparams = {}
             if bop == 'resize':
@@ -577,7 +605,8 @@ def render_images_tab(api_key: str):
                     for fn, img in st.session_state.processed_images.items():
                         if img: img.save(IMAGES_DIR / fn)
                     st.success(f"Сохранено в {IMAGES_DIR}")
-    with tabs[3]:
+
+    with tabs[4]:
         st.markdown("### 💾 Сохранённые результаты")
         if not st.session_state.processed_images:
             st.info("Нет обработанных изображений")
@@ -596,9 +625,10 @@ def render_images_tab(api_key: str):
                         if st.button("🗑️", key=f"del_res_{idx}"): del st.session_state.processed_images[fn]; st.rerun()
             if st.button("💾 Сохранить все в папку", use_container_width=True):
                 for fn, img in st.session_state.processed_images.items():
-                    if img: img.save(IMAGES_DIR/fn)
+                    if img: img.save(IMAGES_DIR / fn)
                 st.success(f"Сохранено в {IMAGES_DIR}")
-    with tabs[4]:
+
+    with tabs[5]:
         st.markdown("### 📊 Статистика")
         c1,c2,c3,c4 = st.columns(4)
         with c1: st.metric("Загружено", len(st.session_state.uploaded_images))
