@@ -6,23 +6,17 @@ import logging
 from typing import Optional
 from io import BytesIO
 
-VOICE_SUPPORT = True
-try:
-    import speech_recognition as sr
-    from gtts import gTTS
-except ImportError:
-    VOICE_SUPPORT = False
-    sr = None
-    gTTS = None
-
 logger = logging.getLogger(__name__)
 
 
 def recognize_speech_from_audio(audio_bytes: bytes) -> Optional[str]:
     """Распознавание русской речи из аудиобайтов"""
-    if not VOICE_SUPPORT or sr is None:
+    try:
+        import speech_recognition as sr
+    except ImportError:
+        st.warning("Установите SpeechRecognition: pip install SpeechRecognition")
         return None
-    
+
     recognizer = sr.Recognizer()
     try:
         audio_file = BytesIO(audio_bytes)
@@ -36,9 +30,12 @@ def recognize_speech_from_audio(audio_bytes: bytes) -> Optional[str]:
 
 def text_to_speech_mp3(text: str) -> Optional[bytes]:
     """Генерация MP3 из текста (русский язык)"""
-    if not VOICE_SUPPORT or gTTS is None:
+    try:
+        from gtts import gTTS
+    except ImportError:
+        st.warning("Установите gTTS: pip install gTTS")
         return None
-    
+
     try:
         tts = gTTS(text=text, lang="ru", slow=False)
         fp = BytesIO()
