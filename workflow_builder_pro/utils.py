@@ -1,19 +1,22 @@
 """
-Утилиты, декораторы, автосохранение и вспомогательные функции
+Вспомогательные утилиты, декораторы, перечисления и dataclass'ы.
 """
-import json
-import logging
-import time
-import base64
-import re
-import hashlib
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Callable, Tuple
-from io import BytesIO
-from datetime import datetime
-
 import streamlit as st
+import json
+import time
+import logging
+from typing import Dict, List, Tuple, Any, Optional, Callable
+from dataclasses import dataclass, field
+from enum import Enum, auto
 from PIL import Image
+from pathlib import Path
+from io import BytesIO
+import base64
+import pandas as pd
+from config import (
+    WORKFLOW_FILE, AGENTS_FILE, MESSAGES_FILE, HISTORY_FILE,
+    TABLES_FILE, IMAGES_METADATA_FILE, IMAGES_DIR, CONFIG
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,21 +25,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).parent / ".workflow_data"
-DATA_DIR.mkdir(exist_ok=True)
 
-IMAGES_DIR = DATA_DIR / "processed_images"
-IMAGES_DIR.mkdir(exist_ok=True)
-
-WORKFLOW_FILE = DATA_DIR / "workflow.json"
-AGENTS_FILE = DATA_DIR / "agents.json"
-MESSAGES_FILE = DATA_DIR / "messages.json"
-HISTORY_FILE = DATA_DIR / "history.json"
-TABLES_FILE = DATA_DIR / "tables.json"
-IMAGES_METADATA_FILE = DATA_DIR / "images_metadata.json"
-
-
+# ============================================================================
+# АВТОСОХРАНЕНИЕ
+# ============================================================================
 def save_workflow_auto(workflow: List[Dict]):
+    """Автосохранение workflow в локальный файл"""
     try:
         with open(WORKFLOW_FILE, 'w', encoding='utf-8') as f:
             json.dump(workflow, f, ensure_ascii=False, indent=2)
@@ -45,6 +39,7 @@ def save_workflow_auto(workflow: List[Dict]):
 
 
 def load_workflow_auto() -> List[Dict]:
+    """Автозагрузка workflow из локального файла"""
     if WORKFLOW_FILE.exists():
         try:
             with open(WORKFLOW_FILE, 'r', encoding='utf-8') as f:
@@ -55,6 +50,7 @@ def load_workflow_auto() -> List[Dict]:
 
 
 def save_agents_auto(agents_data: Dict):
+    """Автосохранение агентов"""
     try:
         with open(AGENTS_FILE, 'w', encoding='utf-8') as f:
             json.dump(agents_data, f, ensure_ascii=False, indent=2)
@@ -63,6 +59,7 @@ def save_agents_auto(agents_data: Dict):
 
 
 def load_agents_auto() -> Optional[Dict]:
+    """Автозагрузка агентов"""
     if AGENTS_FILE.exists():
         try:
             with open(AGENTS_FILE, 'r', encoding='utf-8') as f:
@@ -73,6 +70,7 @@ def load_agents_auto() -> Optional[Dict]:
 
 
 def save_messages_auto(messages: List[Dict]):
+    """Автосохранение сообщений чата"""
     try:
         with open(MESSAGES_FILE, 'w', encoding='utf-8') as f:
             json.dump(messages, f, ensure_ascii=False, indent=2)
@@ -81,6 +79,7 @@ def save_messages_auto(messages: List[Dict]):
 
 
 def load_messages_auto() -> List[Dict]:
+    """Автозагрузка сообщений чата"""
     if MESSAGES_FILE.exists():
         try:
             with open(MESSAGES_FILE, 'r', encoding='utf-8') as f:
@@ -91,6 +90,7 @@ def load_messages_auto() -> List[Dict]:
 
 
 def save_history_auto(history: List[Dict]):
+    """Автосохранение истории"""
     try:
         with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
@@ -99,6 +99,7 @@ def save_history_auto(history: List[Dict]):
 
 
 def load_history_auto() -> List[Dict]:
+    """Автозагрузка истории"""
     if HISTORY_FILE.exists():
         try:
             with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
@@ -109,15 +110,16 @@ def load_history_auto() -> List[Dict]:
 
 
 def save_tables_auto(tables_data: Dict):
+    """Автосохранение таблиц"""
     try:
         with open(TABLES_FILE, 'w', encoding='utf-8') as f:
             serializable = {}
             for key, value in tables_data.items():
-                if hasattr(value, 'to_dict'):
+                if isinstance(value, pd.DataFrame):
                     serializable[key] = {
                         'data': value.to_dict('records'),
                         'columns': list(value.columns),
-                        'created_at': datetime.now().isoformat()
+                        'created_at': time.strftime('%Y-%m-%dT%H:%M:%S')
                     }
                 else:
                     serializable[key] = value
@@ -127,24 +129,25 @@ def save_tables_auto(tables_data: Dict):
 
 
 def load_tables_auto() -> Dict:
+    """Автозагрузка таблиц"""
     if TABLES_FILE.exists():
         try:
             with open(TABLES_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            result = {}
-            for key, value in data.items():
-                if isinstance(value, dict) and 'data' in value:
-                    import pandas as pd
-                    result[key] = pd.DataFrame(value['data'])
-                else:
-                    result[key] = value
-            return result
+                result = {}
+                for key, value in data.items():
+                    if isinstance(value, dict) and 'data' in value:
+                        result[key] = pd.DataFrame(value['data'])
+                    else:
+                        result[key] = value
+                return result
         except Exception as e:
             logger.warning(f"Не удалось загрузить таблицы: {e}")
     return {}
 
 
 def save_images_metadata_auto(metadata: Dict):
+    """Автосохранение метаданных изображений"""
     try:
         with open(IMAGES_METADATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, ensure_ascii=False, indent=2)
@@ -153,6 +156,7 @@ def save_images_metadata_auto(metadata: Dict):
 
 
 def load_images_metadata_auto() -> Dict:
+    """Автозагрузка метаданных изображений"""
     if IMAGES_METADATA_FILE.exists():
         try:
             with open(IMAGES_METADATA_FILE, 'r', encoding='utf-8') as f:
@@ -162,7 +166,10 @@ def load_images_metadata_auto() -> Dict:
     return {}
 
 
-def cache_result(ttl_seconds: int = 300):
+# ============================================================================
+# DECORATORS И УТИЛИТЫ
+# ============================================================================
+def cache_result(ttl_seconds: int = CONFIG.CACHE_TTL_SECONDS):
     def decorator(func: Callable):
         cache: Dict[str, Tuple[Any, float]] = {}
         def wrapper(*args, **kwargs) -> Any:
@@ -171,9 +178,7 @@ def cache_result(ttl_seconds: int = 300):
             if key in cache:
                 result, timestamp = cache[key]
                 if current_time - timestamp < ttl_seconds:
-                    logger.debug(f"Cache hit: {key}")
                     return result
-            logger.debug(f"Cache miss: {key}, executing function")
             result = func(*args, **kwargs)
             cache[key] = (result, current_time)
             return result
@@ -213,48 +218,127 @@ def base64_to_image(base64_string: str) -> Image.Image:
     return Image.open(BytesIO(image_data))
 
 
-def initialize_session_state():
-    defaults = {
-        'agent_manager': None,
-        'workflow': [],
-        'agent_messages': [],
-        'history': [],
-        'analytics': {
-            'total_executions': 0,
-            'successful_executions': 0,
-            'failed_executions': 0
-        },
-        'voice_show_upload': False,
-        'table_manager': None,
-        'current_df': None,
-        'excel_loaded': False,
-        'data_loaded': False,
-        'saved_tables': {},
-        'table_edit_mode': False,
-        'editing_table_id': None,
-        'image_manager': None,
-        'uploaded_images': {},
-        'processed_images': {},
-        'image_batch_progress': 0,
-        'chat_input': '',
-    }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
-    if not st.session_state.get('data_loaded'):
-        saved_workflow = load_workflow_auto()
-        if saved_workflow:
-            st.session_state.workflow = saved_workflow
-        saved_messages = load_messages_auto()
-        if saved_messages:
-            st.session_state.agent_messages = saved_messages
-        saved_history = load_history_auto()
-        if saved_history:
-            st.session_state.history = saved_history
-        saved_agents = load_agents_auto()
-        if saved_agents and 'agents' not in st.session_state:
-            st.session_state.agents = saved_agents
-        saved_tables = load_tables_auto()
-        if saved_tables:
-            st.session_state.saved_tables = saved_tables
-        st.session_state.data_loaded = True
+# ============================================================================
+# ENUMS ДЛЯ ТИПИЗАЦИИ
+# ============================================================================
+class NodeType(Enum):
+    GOOGLE_SHEETS_READ = "google_sheets_read"
+    GOOGLE_SHEETS_WRITE = "google_sheets_write"
+    EXCEL_READ = "excel_read"
+    EXCEL_WRITE = "excel_write"
+    EXCEL_FORMAT = "excel_format"
+    EXCEL_CHART = "excel_chart"
+    DEEPSEEK_AI = "deepseek"
+    CONDITION = "condition"
+    LOOP = "loop"
+    HTTP_GET = "http_get"
+    HTTP_POST = "http_post"
+    EMAIL = "email"
+    TELEGRAM = "telegram"
+    AI_AGENT = "ai_agent"
+    DATA_CLEAN = "data_clean"
+    PIVOT_TABLE = "pivot_table"
+    FILTER = "filter"
+    TRANSFORM = "transform"
+
+
+class ConditionType(Enum):
+    GREATER = "greater"
+    LESS = "less"
+    EQUAL = "equal"
+    NOT_EQUAL = "not_equal"
+    CONTAINS = "contains"
+    NOT_CONTAINS = "not_contains"
+    STARTS_WITH = "starts_with"
+    ENDS_WITH = "ends_with"
+    IS_EMPTY = "is_empty"
+    IS_NOT_EMPTY = "is_not_empty"
+    BETWEEN = "between"
+    IN_LIST = "in_list"
+    CUSTOM = "custom"
+
+
+class MemoryImportance(Enum):
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+
+
+class WorkflowStatus(Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    ERROR = "error"
+    PAUSED = "paused"
+
+
+class ImageEditOperation(Enum):
+    REMOVE_BACKGROUND = "remove_background"
+    REMOVE_WATERMARK = "remove_watermark"
+    RESIZE = "resize"
+    CROP = "crop"
+    ROTATE = "rotate"
+    ENHANCE = "enhance"
+    FILTER = "filter"
+    ADD_TEXT = "add_text"
+    ADD_WATERMARK = "add_watermark"
+    CONVERT_FORMAT = "convert_format"
+
+
+# ============================================================================
+# DATA CLASSES ДЛЯ ТАБЛИЦ
+# ============================================================================
+@dataclass
+class TableCell:
+    row: int
+    column: int
+    value: Any
+    formula: Optional[str] = None
+    font: Optional[Dict] = None
+    fill: Optional[Dict] = None
+    border: Optional[Dict] = None
+    alignment: Optional[Dict] = None
+    data_validation: Optional[Dict] = None
+    
+    def to_openpyxl_style(self) -> Dict[str, Any]:
+        from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
+        styles = {}
+        if self.font and Font:
+            styles['font'] = Font(**{k: v for k, v in self.font.items() if v is not None})
+        if self.fill and PatternFill:
+            styles['fill'] = PatternFill(**self.fill)
+        if self.border and Border:
+            side = Side(**{k: v for k, v in self.border.items() if v is not None})
+            styles['border'] = Border(left=side, right=side, top=side, bottom=side)
+        if self.alignment and Alignment:
+            styles['alignment'] = Alignment(**self.alignment)
+        return styles
+
+
+@dataclass
+class TableRange:
+    sheet_name: str
+    start_row: int
+    end_row: int
+    start_col: Any  # Union[int, str]
+    end_col: Any
+    
+    @property
+    def a1_notation(self) -> str:
+        from openpyxl.utils import get_column_letter
+        start_col_letter = get_column_letter(self.start_col) if isinstance(self.start_col, int) else self.start_col
+        end_col_letter = get_column_letter(self.end_col) if isinstance(self.end_col, int) else self.end_col
+        return f"{self.sheet_name}!{start_col_letter}{self.start_row}:{end_col_letter}{self.end_row}"
+
+
+@dataclass
+class ChartConfig:
+    chart_type: str
+    title: str
+    x_column: str
+    y_columns: List[str]
+    x_title: Optional[str] = None
+    y_title: Optional[str] = None
+    colors: Optional[List[str]] = None
+    width: int = 800
+    height: int = 400
