@@ -1,6 +1,6 @@
 """
 Менеджер для работы с таблицами (Google Sheets, Excel).
-Исправлено: убран ошибочный fallback на CSV при чтении Excel.
+Поддерживает .xlsx, .xlsm, .xls (через xlrd).
 """
 import streamlit as st
 import pandas as pd
@@ -14,6 +14,7 @@ import re
 import json
 from config import CONFIG
 from utils import handle_errors, cache_result
+import os
 
 try:
     import openpyxl
@@ -24,6 +25,13 @@ try:
 except ImportError:
     EXCEL_SUPPORT = False
     openpyxl = None
+
+try:
+    import xlrd
+    XLRD_SUPPORT = True
+except ImportError:
+    XLRD_SUPPORT = False
+    xlrd = None
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +77,26 @@ class TableManager:
                    range_a1: Optional[str] = None, use_cache: bool = True) -> Optional[pd.DataFrame]:
         if not EXCEL_SUPPORT:
             raise ImportError("Установите openpyxl: pip install openpyxl")
-        # Читаем строго как Excel (не CSV)
-        df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl',
-                           **({'usecols': range_a1} if range_a1 else {}))
+
+        ext = ""
+        if isinstance(file_path, str):
+            ext = os.path.splitext(file_path)[1].lower()
+        elif isinstance(file_path, BytesIO):
+            name = getattr(file_path, 'name', '')
+            ext = os.path.splitext(name)[1].lower() if name else ''
+
+        try:
+            df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl',
+                               **({'usecols': range_a1} if range_a1 else {}))
+        except Exception as e:
+            if XLRD_SUPPORT and ext == '.xls':
+                logger.info("Попытка чтения .xls через xlrd")
+                df = pd.read_excel(file_path, sheet_name=sheet_name, engine='xlrd',
+                                   **({'usecols': range_a1} if range_a1 else {}))
+            else:
+                logger.error(f"Ошибка чтения Excel: {e}")
+                return None
+
         if use_cache:
             cache_key = f"excel:{hash(str(file_path))}:{sheet_name}"
             self._cache[cache_key] = df.copy()
