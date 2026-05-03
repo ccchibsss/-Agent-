@@ -1,5 +1,6 @@
 """
 UI-функции для рендеринга вкладок приложения.
+Исправлено: при загрузке Excel отображается понятное сообщение об ошибке.
 """
 import streamlit as st
 import pandas as pd
@@ -16,12 +17,13 @@ from utils import (
 )
 from voice import recognize_speech_from_audio, text_to_speech_mp3
 from condition_parser import RussianConditionParser
-from workflow import WorkflowExecutor
+from workflow import WorkflowExecutor, AIWorkflowGenerator
 from ai_agent import AgentManager
 from table_manager import TableManager
 from image_manager import ImageManager
 
 
+# ---------- Чат ----------
 def render_chat_tab(agent_manager: AgentManager, api_key: str):
     current = agent_manager.get_current_agent()
     if not current:
@@ -89,6 +91,7 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
         st.rerun()
 
 
+# ---------- Обучение ----------
 def render_training_tab(agent_manager: AgentManager):
     current = agent_manager.get_current_agent()
     if not current:
@@ -139,6 +142,7 @@ def render_training_tab(agent_manager: AgentManager):
                 st.warning("Не найдено примеров в формате Вопрос -> Ответ")
 
 
+# ---------- Память ----------
 def render_memory_tab(agent_manager: AgentManager):
     current = agent_manager.get_current_agent()
     if not current:
@@ -176,6 +180,7 @@ def render_memory_tab(agent_manager: AgentManager):
         st.rerun()
 
 
+# ---------- Аналитика ----------
 def render_analytics_tab(agent_manager: AgentManager):
     current = agent_manager.get_current_agent()
     if not current:
@@ -201,102 +206,7 @@ def render_analytics_tab(agent_manager: AgentManager):
                 st.markdown(f"**🤖** {conv['agent'][:200]}")
 
 
-def render_workflow_tab(agent_manager: AgentManager, api_key: str):
-    st.subheader("🤖 Конструктор Workflow")
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.markdown("### 📦 Блоки")
-        blocks = [
-            ("📖 Google Sheets", NodeType.GOOGLE_SHEETS_READ.value),
-            ("📗 Excel", NodeType.EXCEL_READ.value),
-            ("🧠 DeepSeek AI", NodeType.DEEPSEEK_AI.value),
-            ("🔀 Условие", NodeType.CONDITION.value),
-            ("🔄 Цикл", NodeType.LOOP.value),
-            ("📧 Email", NodeType.EMAIL.value),
-            ("📱 Telegram", NodeType.TELEGRAM.value),
-            ("🧠 ИИ Агент", NodeType.AI_AGENT.value),
-            ("🧹 Очистка", NodeType.DATA_CLEAN.value),
-            ("📊 Сводная", NodeType.PIVOT_TABLE.value),
-        ]
-        for name, btype in blocks:
-            if st.button(f"{name}", key=f"add_{btype}", use_container_width=True):
-                st.session_state.workflow.append({
-                    "id": len(st.session_state.workflow), "name": name,
-                    "type": btype, "config": {}, "status": WorkflowStatus.PENDING.value
-                })
-                st.rerun()
-        st.markdown("### 🧠 Агенты")
-        for agent in agent_manager.agents.values():
-            if st.button(f"🧠 {agent.name}", key=f"wf_agent_{agent.id}", use_container_width=True):
-                st.session_state.workflow.append({
-                    "id": len(st.session_state.workflow), "name": f"Агент: {agent.name}",
-                    "type": NodeType.AI_AGENT.value, "agent_id": agent.id,
-                    "config": {"question":"","use_training":True}, "status": WorkflowStatus.PENDING.value
-                })
-                st.rerun()
-    with col2:
-        st.markdown("### 📋 Текущий workflow")
-        if not st.session_state.workflow:
-            st.info("💡 Добавьте блоки слева")
-            return
-        for i, block in enumerate(st.session_state.workflow):
-            cls = ""
-            if block.get('status') == WorkflowStatus.SUCCESS.value: cls = "workflow-node-success"
-            elif block.get('status') == WorkflowStatus.ERROR.value: cls = "workflow-node-error"
-            st.markdown(f"""<div class="workflow-node {cls}">
-                <b>{block.get('name')}</b> <small>#{i+1}</small><br><small>{block.get('type')}</small>
-            </div>""", unsafe_allow_html=True)
-            if i < len(st.session_state.workflow)-1:
-                st.markdown('<div class="workflow-connector">▼</div>', unsafe_allow_html=True)
-            with st.expander(f"⚙️ {block.get('name')}"):
-                cfg = block.get('config', {})
-                if block['type'] == NodeType.GOOGLE_SHEETS_READ.value:
-                    cfg['sheet_url'] = st.text_input("URL", cfg.get('sheet_url',''), key=f"gs_url_{i}")
-                    cfg['sheet_name'] = st.text_input("Лист", cfg.get('sheet_name',''), key=f"gs_sheet_{i}")
-                elif block['type'] == NodeType.EXCEL_READ.value:
-                    cfg['file_path'] = st.text_input("Путь", cfg.get('file_path',''), key=f"ex_path_{i}")
-                elif block['type'] == NodeType.DEEPSEEK_AI.value:
-                    cfg['system_prompt'] = st.text_area("Инструкция", cfg.get('system_prompt',''), height=60, key=f"ai_sys_{i}")
-                    cfg['user_prompt'] = st.text_area("Запрос", cfg.get('user_prompt',''), height=60, key=f"ai_user_{i}")
-                elif block['type'] == NodeType.CONDITION.value:
-                    cfg['condition'] = st.text_area("Условие", cfg.get('condition',''), height=60, key=f"cond_{i}")
-                    if cfg.get('condition'):
-                        parsed = RussianConditionParser.parse(cfg['condition'])
-                        if parsed.get('code'):
-                            st.code(parsed['code'], language='python')
-                elif block['type'] == NodeType.AI_AGENT.value:
-                    agent = agent_manager.agents.get(block.get('agent_id'))
-                    if agent:
-                        st.info(f"🧠 {agent.name}")
-                        cfg['question'] = st.text_area("Вопрос", cfg.get('question',''), height=60, key=f"agent_q_{i}")
-                elif block['type'] == NodeType.DATA_CLEAN.value:
-                    cfg['remove_duplicates'] = st.checkbox("Удалить дубли", cfg.get('remove_duplicates',True), key=f"clean_dup_{i}")
-                    cfg['remove_empty'] = st.checkbox("Удалить пустые", cfg.get('remove_empty',True), key=f"clean_empty_{i}")
-                block['config'] = cfg
-                if st.button(f"🗑️ Удалить", key=f"del_wf_{i}"):
-                    st.session_state.workflow.pop(i)
-                    st.rerun()
-        if st.button("🚀 ЗАПУСТИТЬ", type="primary", use_container_width=True):
-            progress = st.progress(0)
-            status = st.empty()
-            def update_progress(idx, node):
-                progress.progress((idx+1)/len(st.session_state.workflow))
-                status.text(f"🔄 {node.get('name')}")
-            table_manager = st.session_state.table_manager
-            executor = WorkflowExecutor(st.session_state.workflow, api_key, agent_manager, table_manager)
-            result = executor.execute(update_progress)
-            progress.progress(1.0)
-            if result['success']:
-                st.balloons()
-                st.success(f"✅ Успешно за {result['execution_time']:.1f}с")
-                with st.expander("📋 Результаты", expanded=True):
-                    for res in result['results']:
-                        st.markdown(f"**📌 {res['node']}**")
-                        st.json({k:v for k,v in res['result'].items() if k!='df'})
-            else:
-                st.error(f"❌ Ошибка: {result.get('error')}")
-
-
+# ---------- Условия ----------
 def render_conditions_tab():
     st.subheader("🔀 Русские условия")
     st.markdown("""
@@ -322,6 +232,270 @@ def render_conditions_tab():
                 st.warning("Не распознано")
 
 
+# ---------- Workflow (расширенный) ----------
+def render_workflow_tab(agent_manager: AgentManager, api_key: str):
+    st.subheader("🤖 Конструктор Workflow")
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        st.markdown("### 📦 Блоки")
+        blocks = [
+            ("📖 Google Sheets", NodeType.GOOGLE_SHEETS_READ.value),
+            ("📗 Excel", NodeType.EXCEL_READ.value),
+            ("🧠 DeepSeek AI", NodeType.DEEPSEEK_AI.value),
+            ("🔀 Условие", NodeType.CONDITION.value),
+            ("🔄 Цикл", NodeType.LOOP.value),
+            ("📧 Email", NodeType.EMAIL.value),
+            ("📱 Telegram", NodeType.TELEGRAM.value),
+            ("🧠 ИИ Агент", NodeType.AI_AGENT.value),
+            ("🧹 Очистка", NodeType.DATA_CLEAN.value),
+            ("📊 Сводная", NodeType.PIVOT_TABLE.value),
+            ("🌐 HTTP GET", NodeType.HTTP_GET.value),
+            ("📤 HTTP POST", NodeType.HTTP_POST.value),
+        ]
+        for name, btype in blocks:
+            if st.button(f"{name}", key=f"add_{btype}", use_container_width=True):
+                st.session_state.workflow.append({
+                    "id": len(st.session_state.workflow),
+                    "name": name,
+                    "type": btype,
+                    "config": _default_config(btype),
+                    "status": WorkflowStatus.PENDING.value
+                })
+                st.rerun()
+
+        st.markdown("### 🧠 Агенты")
+        for agent in agent_manager.agents.values():
+            if st.button(f"🧠 {agent.name}", key=f"wf_agent_{agent.id}", use_container_width=True):
+                st.session_state.workflow.append({
+                    "id": len(st.session_state.workflow),
+                    "name": f"Агент: {agent.name}",
+                    "type": NodeType.AI_AGENT.value,
+                    "agent_id": agent.id,
+                    "config": {"question": "", "use_training": True},
+                    "status": WorkflowStatus.PENDING.value
+                })
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("### 🪄 ИИ-генератор")
+        desc = st.text_area("Опишите workflow на русском", height=100,
+                            placeholder="Пример: прочитай Google таблицу, если цена больше 1000 отправь email")
+        if st.button("✨ Сгенерировать Workflow", use_container_width=True):
+            if desc and api_key:
+                with st.spinner("ИИ создаёт workflow..."):
+                    generated = AIWorkflowGenerator.generate(desc, api_key)
+                    if generated:
+                        st.session_state.workflow = generated
+                        save_workflow_auto(generated)
+                        st.success(f"Создано {len(generated)} блоков!")
+                        st.rerun()
+                    else:
+                        st.error("Не удалось сгенерировать workflow")
+            else:
+                st.warning("Введите описание и API ключ")
+
+    with col2:
+        st.markdown("### 📋 Текущий workflow")
+        if not st.session_state.workflow:
+            st.info("💡 Добавьте блоки слева или опишите задачу для ИИ")
+        else:
+            for i, block in enumerate(st.session_state.workflow):
+                cls = ""
+                if block.get('status') == WorkflowStatus.SUCCESS.value:
+                    cls = "workflow-node-success"
+                elif block.get('status') == WorkflowStatus.ERROR.value:
+                    cls = "workflow-node-error"
+                st.markdown(f"""<div class="workflow-node {cls}">
+                    <b>{block.get('name')}</b> <small>#{i+1}</small><br>
+                    <small>{block.get('type')}</small>
+                </div>""", unsafe_allow_html=True)
+                if i < len(st.session_state.workflow) - 1:
+                    st.markdown('<div class="workflow-connector">▼</div>', unsafe_allow_html=True)
+
+                with st.expander(f"⚙️ Настроить {block.get('name')}"):
+                    _render_block_config(block, i, agent_manager)
+                    if st.button("🗑️ Удалить блок", key=f"del_wf_{i}"):
+                        st.session_state.workflow.pop(i)
+                        st.rerun()
+
+            st.markdown("---")
+            col_act1, col_act2 = st.columns(2)
+            with col_act1:
+                if st.button("🚀 ЗАПУСТИТЬ WORKFLOW", type="primary", use_container_width=True):
+                    _execute_workflow(agent_manager, api_key)
+            with col_act2:
+                if st.button("🗑️ Очистить весь workflow", use_container_width=True):
+                    st.session_state.workflow = []
+                    save_workflow_auto([])
+                    st.rerun()
+
+
+def _default_config(node_type: str) -> dict:
+    """Возвращает дефолтный конфиг с подсказками для каждого типа блока."""
+    defaults = {
+        NodeType.GOOGLE_SHEETS_READ.value: {
+            "sheet_url": "",
+            "sheet_name": "",
+            "range_a1": ""
+        },
+        NodeType.EXCEL_READ.value: {
+            "file_path": "",
+            "sheet_name": 0
+        },
+        NodeType.DEEPSEEK_AI.value: {
+            "system_prompt": "Ты полезный ассистент",
+            "user_prompt": "",
+            "temperature": 0.3
+        },
+        NodeType.CONDITION.value: {
+            "condition": "если цена больше 1000"
+        },
+        NodeType.LOOP.value: {
+            "items": '["элемент1", "элемент2"]',
+            "batch_size": 10,
+            "action": "print(item)"
+        },
+        NodeType.EMAIL.value: {
+            "to": "",
+            "subject": "Уведомление",
+            "body": "",
+            "attachments": ""
+        },
+        NodeType.TELEGRAM.value: {
+            "chat_id": "",
+            "message": "",
+            "parse_mode": "HTML"
+        },
+        NodeType.AI_AGENT.value: {
+            "question": "Проанализируй данные",
+            "use_training": True
+        },
+        NodeType.DATA_CLEAN.value: {
+            "remove_duplicates": True,
+            "remove_empty": True,
+            "fill_na": "",
+            "fill_value": ""
+        },
+        NodeType.PIVOT_TABLE.value: {
+            "index": "",
+            "columns": "",
+            "values": "",
+            "aggfunc": "sum"
+        },
+        NodeType.HTTP_GET.value: {
+            "url": "",
+            "headers": "{}",
+            "timeout": 30
+        },
+        NodeType.HTTP_POST.value: {
+            "url": "",
+            "headers": "{}",
+            "body": "{}",
+            "timeout": 30
+        },
+    }
+    return defaults.get(node_type, {})
+
+
+def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
+    """Расширенная настройка каждого типа блока."""
+    cfg = block.get('config', {})
+    btype = block.get('type')
+
+    if btype == NodeType.GOOGLE_SHEETS_READ.value:
+        cfg['sheet_url'] = st.text_input("URL таблицы", cfg.get('sheet_url', ''), key=f"gs_url_{idx}")
+        cfg['sheet_name'] = st.text_input("Имя листа", cfg.get('sheet_name', ''), key=f"gs_sheet_{idx}")
+        cfg['range_a1'] = st.text_input("Диапазон (A1:B10)", cfg.get('range_a1', ''), key=f"gs_range_{idx}")
+
+    elif btype == NodeType.EXCEL_READ.value:
+        cfg['file_path'] = st.text_input("Путь к файлу", cfg.get('file_path', ''), key=f"ex_path_{idx}")
+        cfg['sheet_name'] = st.text_input("Лист (индекс или имя)", cfg.get('sheet_name', 0), key=f"ex_sheet_{idx}")
+
+    elif btype == NodeType.DEEPSEEK_AI.value:
+        cfg['system_prompt'] = st.text_area("Системный промпт", cfg.get('system_prompt', ''), height=80, key=f"ai_sys_{idx}")
+        cfg['user_prompt'] = st.text_area("Запрос пользователя", cfg.get('user_prompt', ''), height=80, key=f"ai_user_{idx}")
+        cfg['temperature'] = st.slider("Температура", 0.0, 1.0, float(cfg.get('temperature', 0.3)), key=f"ai_temp_{idx}")
+
+    elif btype == NodeType.CONDITION.value:
+        cfg['condition'] = st.text_area("Условие на русском", cfg.get('condition', ''), height=80, key=f"cond_{idx}")
+        if cfg.get('condition'):
+            parsed = RussianConditionParser.parse(cfg['condition'])
+            if parsed.get('code'):
+                st.code(parsed['code'], language='python')
+
+    elif btype == NodeType.LOOP.value:
+        cfg['items'] = st.text_area("Элементы (JSON массив)", cfg.get('items', '["элемент1"]'), height=80, key=f"loop_items_{idx}")
+        cfg['batch_size'] = st.number_input("Размер пакета", 1, 1000, int(cfg.get('batch_size', 10)), key=f"loop_batch_{idx}")
+        cfg['action'] = st.text_area("Действие (Python код)", cfg.get('action', 'print(item)'), height=60, key=f"loop_action_{idx}")
+
+    elif btype == NodeType.EMAIL.value:
+        cfg['to'] = st.text_input("Кому (email)", cfg.get('to', ''), key=f"email_to_{idx}")
+        cfg['subject'] = st.text_input("Тема", cfg.get('subject', 'Уведомление'), key=f"email_subj_{idx}")
+        cfg['body'] = st.text_area("Тело письма", cfg.get('body', ''), height=100, key=f"email_body_{idx}")
+        cfg['attachments'] = st.text_input("Вложения (через запятую)", cfg.get('attachments', ''), key=f"email_att_{idx}")
+
+    elif btype == NodeType.TELEGRAM.value:
+        cfg['chat_id'] = st.text_input("Chat ID", cfg.get('chat_id', ''), key=f"tg_chat_{idx}")
+        cfg['message'] = st.text_area("Сообщение", cfg.get('message', ''), height=80, key=f"tg_msg_{idx}")
+        cfg['parse_mode'] = st.selectbox("Parse Mode", ["HTML","Markdown","None"],
+                                         index=["HTML","Markdown","None"].index(cfg.get('parse_mode','HTML')),
+                                         key=f"tg_parse_{idx}")
+
+    elif btype == NodeType.AI_AGENT.value:
+        agent = agent_manager.agents.get(block.get('agent_id'))
+        if agent:
+            st.info(f"🧠 Агент: {agent.name}")
+        cfg['question'] = st.text_area("Вопрос агенту", cfg.get('question', ''), height=60, key=f"agent_q_{idx}")
+        cfg['use_training'] = st.checkbox("Использовать обучение", cfg.get('use_training', True), key=f"agent_train_{idx}")
+
+    elif btype == NodeType.DATA_CLEAN.value:
+        cfg['remove_duplicates'] = st.checkbox("Удалить дубликаты", cfg.get('remove_duplicates', True), key=f"clean_dup_{idx}")
+        cfg['remove_empty'] = st.checkbox("Удалить пустые строки", cfg.get('remove_empty', True), key=f"clean_empty_{idx}")
+        cfg['fill_na'] = st.text_input("Заполнить пропуски значением", cfg.get('fill_na', ''), key=f"clean_fill_{idx}")
+
+    elif btype == NodeType.PIVOT_TABLE.value:
+        cfg['index'] = st.text_input("Индекс (столбцы через запятую)", cfg.get('index', ''), key=f"pivot_idx_{idx}")
+        cfg['columns'] = st.text_input("Колонки", cfg.get('columns', ''), key=f"pivot_col_{idx}")
+        cfg['values'] = st.text_input("Значения", cfg.get('values', ''), key=f"pivot_val_{idx}")
+        cfg['aggfunc'] = st.selectbox("Агрегация", ["sum","mean","count","min","max"], index=0, key=f"pivot_agg_{idx}")
+
+    elif btype == NodeType.HTTP_GET.value:
+        cfg['url'] = st.text_input("URL", cfg.get('url', ''), key=f"get_url_{idx}")
+        cfg['headers'] = st.text_area("Заголовки (JSON)", cfg.get('headers', '{}'), height=60, key=f"get_headers_{idx}")
+        cfg['timeout'] = st.number_input("Таймаут (сек)", 1, 120, int(cfg.get('timeout', 30)), key=f"get_timeout_{idx}")
+
+    elif btype == NodeType.HTTP_POST.value:
+        cfg['url'] = st.text_input("URL", cfg.get('url', ''), key=f"post_url_{idx}")
+        cfg['headers'] = st.text_area("Заголовки (JSON)", cfg.get('headers', '{}'), height=60, key=f"post_headers_{idx}")
+        cfg['body'] = st.text_area("Тело запроса (JSON)", cfg.get('body', '{}'), height=80, key=f"post_body_{idx}")
+        cfg['timeout'] = st.number_input("Таймаут (сек)", 1, 120, int(cfg.get('timeout', 30)), key=f"post_timeout_{idx}")
+
+    block['config'] = cfg
+
+
+def _execute_workflow(agent_manager, api_key):
+    progress = st.progress(0)
+    status = st.empty()
+    def update_progress(idx, node):
+        progress.progress((idx + 1) / len(st.session_state.workflow))
+        status.text(f"🔄 {node.get('name')}")
+    table_manager = st.session_state.table_manager
+    executor = WorkflowExecutor(st.session_state.workflow, api_key, agent_manager, table_manager)
+    result = executor.execute(update_progress)
+    progress.progress(1.0)
+    if result['success']:
+        st.balloons()
+        st.success(f"✅ Workflow выполнен за {result['execution_time']:.1f}с")
+        with st.expander("📋 Результаты", expanded=True):
+            for res in result['results']:
+                st.markdown(f"**📌 {res['node']}**")
+                st.json({k:v for k,v in res['result'].items() if k!='df'})
+    else:
+        st.error(f"❌ Ошибка: {result.get('error')}")
+
+
+# ---------- Таблицы + ИИ ----------
 def render_tables_tab(api_key: str):
     st.subheader("🗂 Таблицы + ИИ + Редактор")
     table_manager = st.session_state.table_manager
@@ -376,9 +550,15 @@ def render_tables_tab(api_key: str):
             if uploaded:
                 with st.spinner("Чтение..."):
                     if uploaded.name.endswith('.csv'):
-                        df = pd.read_csv(uploaded)
+                        try:
+                            df = pd.read_csv(uploaded)
+                        except Exception as e:
+                            st.error(f"❌ Ошибка чтения CSV: {e}")
+                            df = None
                     else:
                         df = table_manager.read_excel(uploaded)
+                        if df is None:
+                            st.error("❌ Файл не является корректным Excel-файлом или повреждён.")
                     if df is not None:
                         tid = f"ex_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                         st.session_state.current_df = df
@@ -454,6 +634,7 @@ def render_tables_tab(api_key: str):
             st.info("💡 Загрузите таблицу слева или выберите из сохранённых")
 
 
+# ---------- Изображения (с ИИ-редактированием) ----------
 def render_images_tab(api_key: str):
     st.subheader("🖼️ Редактор изображений с ИИ")
     image_manager = st.session_state.image_manager
@@ -504,14 +685,9 @@ def render_images_tab(api_key: str):
                 with col2:
                     op = st.selectbox("Операция", [op.value for op in ImageEditOperation],
                                       format_func=lambda x: {
-                                          'remove_background':'Удалить фон',
-                                          'remove_watermark':'Удалить вод.знак',
-                                          'resize':'Изменить размер',
-                                          'crop':'Обрезать',
-                                          'rotate':'Повернуть',
-                                          'enhance':'Улучшить',
-                                          'filter':'Фильтр',
-                                          'add_watermark':'Водяной знак',
+                                          'remove_background':'Удалить фон', 'remove_watermark':'Удалить вод.знак',
+                                          'resize':'Изменить размер', 'crop':'Обрезать', 'rotate':'Повернуть',
+                                          'enhance':'Улучшить', 'filter':'Фильтр', 'add_watermark':'Водяной знак',
                                           'convert_format':'Формат'
                                       }.get(x,x), key="manual_op")
                     params = {}
@@ -572,11 +748,8 @@ def render_images_tab(api_key: str):
             st.markdown(f"Доступно: {len(st.session_state.uploaded_images)}")
             bop = st.selectbox("Операция для всех", [op.value for op in ImageEditOperation],
                                format_func=lambda x: {
-                                   'remove_background':'Удалить фон',
-                                   'remove_watermark':'Удалить вод.знак',
-                                   'resize':'Изменить размер',
-                                   'enhance':'Улучшить',
-                                   'convert_format':'Конвертировать'
+                                   'remove_background':'Удалить фон', 'remove_watermark':'Удалить вод.знак',
+                                   'resize':'Изменить размер', 'enhance':'Улучшить', 'convert_format':'Конвертировать'
                                }.get(x,x), key="batch_operation")
             bparams = {}
             if bop == 'resize':
