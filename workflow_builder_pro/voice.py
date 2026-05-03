@@ -16,7 +16,6 @@ def recognize_speech_from_audio(audio_bytes: bytes) -> Optional[str]:
     except ImportError:
         st.warning("Установите SpeechRecognition: pip install SpeechRecognition")
         return None
-
     recognizer = sr.Recognizer()
     try:
         audio_file = BytesIO(audio_bytes)
@@ -35,7 +34,6 @@ def text_to_speech_mp3(text: str) -> Optional[bytes]:
     except ImportError:
         st.warning("Установите gTTS: pip install gTTS")
         return None
-
     try:
         tts = gTTS(text=text, lang="ru", slow=False)
         fp = BytesIO()
