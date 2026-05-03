@@ -1,9 +1,5 @@
-
-## 2. **workflow.py** (добавлены SMS, расширенная автоматизация и условия):
-
-```python
 """
-Workflow: генератор, исполнитель и узлы с расширенной автоматизацией
+Workflow: генератор, исполнитель и узлы
 """
 import json
 import re
@@ -90,7 +86,7 @@ class AIWorkflowGenerator:
 
 
 class WorkflowExecutor:
-    """Выполняет workflow с поддержкой условий на русском и расширенной автоматизацией"""
+    """Выполняет workflow с поддержкой условий и расширенной автоматизации"""
     
     def __init__(
         self,
@@ -107,7 +103,6 @@ class WorkflowExecutor:
         self.results: List[Dict] = []
         self.current_node_index: int = 0
         self.start_time: Optional[float] = None
-        self.conditional_branches: Dict[int, bool] = {}
     
     def execute(self, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
         """Выполняет весь workflow с поддержкой условий"""
@@ -159,6 +154,7 @@ class WorkflowExecutor:
                         if node.get('retries', 0) < retry_count:
                             node['retries'] = node.get('retries', 0) + 1
                             logger.info(f"Повтор узла {node.get('name')} ({node['retries']}/{retry_count})")
+                            time.sleep(1) # Небольшая задержка перед повтором
                             continue
                 
                 return {
@@ -208,7 +204,6 @@ class WorkflowExecutor:
         
         elif condition_type == 'custom':
             custom_condition = condition.get('expression', '')
-            parsed = RussianConditionParser.parse(custom_condition)
             return self._evaluate_condition(custom_condition)
         
         return True
@@ -230,12 +225,12 @@ class WorkflowExecutor:
             NodeType.HTTP_POST.value: lambda: self._execute_http_post(config),
             NodeType.EMAIL.value: lambda: self._execute_email(config),
             NodeType.TELEGRAM.value: lambda: self._execute_telegram(config),
-            'sms': lambda: self._execute_sms(config),  # Новый тип
+            NodeType.SMS.value: lambda: self._execute_sms(config),
             NodeType.AI_AGENT.value: lambda: self._execute_ai_agent(config),
             NodeType.DATA_CLEAN.value: lambda: self._execute_data_clean(config),
             NodeType.PIVOT_TABLE.value: lambda: self._execute_pivot_table(config),
-            'webhook': lambda: self._execute_webhook(config),  # Новый тип
-            'schedule': lambda: self._execute_schedule(config),  # Новый тип
+            NodeType.WEBHOOK.value: lambda: self._execute_webhook(config),
+            NodeType.SCHEDULE.value: lambda: self._execute_schedule(config),
         }
         
         executor = executors.get(node_type)
@@ -243,66 +238,44 @@ class WorkflowExecutor:
             return executor()
         else:
             return {'status': 'unknown_type', 'type': node_type}
-    
+
     def _execute_sms(self, config: Dict) -> Dict:
         """Отправка SMS (поддержка различных провайдеров)"""
         phone = config.get('phone', '')
         message = config.get('message', '')
-        provider = config.get('provider', 'twilio')  # twilio, smsru, custom
+        provider = config.get('provider', 'simulated')
         
         if not phone or not message:
             return {'error': 'Телефон или сообщение не указаны'}
         
         try:
             if provider == 'twilio':
-                # Twilio integration (пример)
                 account_sid = config.get('twilio_sid', '')
                 auth_token = config.get('twilio_token', '')
                 from_number = config.get('from_number', '')
-                
-                # Здесь реальный код отправки через Twilio
-                return {
-                    'status': 'sent',
-                    'provider': 'twilio',
-                    'phone': phone,
-                    'message': message[:50] + '...'
-                }
+                # Здесь код отправки через Twilio API
+                return {'status': 'sent', 'provider': 'twilio', 'phone': phone}
             
             elif provider == 'smsru':
-                # SMS.ru integration
                 api_key = config.get('smsru_key', '')
                 url = "https://sms.ru/sms/send"
-                params = {
-                    'api_id': api_key,
-                    'to': phone,
-                    'msg': message,
-                    'json': 1
-                }
+                params = {'api_id': api_key, 'to': phone, 'msg': message, 'json': 1}
                 response = requests.post(url, data=params, timeout=30)
                 result = response.json()
-                
-                return {
-                    'status': 'sent' if result.get('status') == 100 else 'failed',
-                    'provider': 'smsru',
-                    'phone': phone,
-                    'message_id': result.get('sms_id')
-                }
+                return {'status': 'sent' if result.get('status') == 100 else 'failed', 'provider': 'smsru'}
             
             else:
-                # Custom webhook
+                # Webhook или симуляция
                 webhook_url = config.get('webhook_url', '')
                 if webhook_url:
-                    response = requests.post(webhook_url, json={
-                        'phone': phone,
-                        'message': message
-                    }, timeout=30)
+                    requests.post(webhook_url, json={'phone': phone, 'message': message}, timeout=30)
                     return {'status': 'sent', 'provider': 'webhook'}
-            
-            return {'status': 'simulated', 'phone': phone, 'message': message[:50]}
+                
+                return {'status': 'simulated', 'phone': phone, 'message': message[:50]}
             
         except Exception as e:
             return {'error': str(e), 'status': 'failed'}
-    
+
     def _execute_webhook(self, config: Dict) -> Dict:
         """Вызов webhook"""
         url = config.get('url', '')
@@ -332,12 +305,11 @@ class WorkflowExecutor:
             }
         except Exception as e:
             return {'error': str(e)}
-    
+
     def _execute_schedule(self, config: Dict) -> Dict:
         """Планировщик (информационный узел)"""
         cron = config.get('cron', '')
         timezone = config.get('timezone', 'UTC')
-        
         return {
             'status': 'scheduled',
             'cron': cron,
@@ -345,7 +317,6 @@ class WorkflowExecutor:
             'message': 'Узел планировщика (требует внешней интеграции)'
         }
     
-    # ... остальные методы остаются без изменений ...
     def _execute_google_sheets_read(self, config: Dict) -> Dict:
         """Чтение из Google Sheets"""
         sheet_url = config.get('sheet_url', '')
