@@ -1,6 +1,79 @@
-# config.py
+"""
+Конфигурация приложения, ENUMs и константы
+"""
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
+from enum import Enum, auto
+
+
+class NodeType(Enum):
+    """Типы узлов workflow"""
+    GOOGLE_SHEETS_READ = "google_sheets_read"
+    GOOGLE_SHEETS_WRITE = "google_sheets_write"
+    EXCEL_READ = "excel_read"
+    EXCEL_WRITE = "excel_write"
+    EXCEL_FORMAT = "excel_format"
+    EXCEL_CHART = "excel_chart"
+    DEEPSEEK_AI = "deepseek"
+    CONDITION = "condition"
+    LOOP = "loop"
+    HTTP_GET = "http_get"
+    HTTP_POST = "http_post"
+    EMAIL = "email"
+    TELEGRAM = "telegram"
+    AI_AGENT = "ai_agent"
+    DATA_CLEAN = "data_clean"
+    PIVOT_TABLE = "pivot_table"
+    FILTER = "filter"
+    TRANSFORM = "transform"
+
+
+class ConditionType(Enum):
+    """Типы условий для парсинга"""
+    GREATER = "greater"
+    LESS = "less"
+    EQUAL = "equal"
+    NOT_EQUAL = "not_equal"
+    CONTAINS = "contains"
+    NOT_CONTAINS = "not_contains"
+    STARTS_WITH = "starts_with"
+    ENDS_WITH = "ends_with"
+    IS_EMPTY = "is_empty"
+    IS_NOT_EMPTY = "is_not_empty"
+    BETWEEN = "between"
+    IN_LIST = "in_list"
+    CUSTOM = "custom"
+
+
+class MemoryImportance(Enum):
+    """Уровни важности памяти агента"""
+    LOW = "low"
+    NORMAL = "normal"
+    HIGH = "high"
+
+
+class WorkflowStatus(Enum):
+    """Статусы выполнения workflow"""
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCESS = "success"
+    ERROR = "error"
+    PAUSED = "paused"
+
+
+class ImageEditOperation(Enum):
+    """Операции редактирования изображений"""
+    REMOVE_BACKGROUND = "remove_background"
+    REMOVE_WATERMARK = "remove_watermark"
+    RESIZE = "resize"
+    CROP = "crop"
+    ROTATE = "rotate"
+    ENHANCE = "enhance"
+    FILTER = "filter"
+    ADD_TEXT = "add_text"
+    ADD_WATERMARK = "add_watermark"
+    CONVERT_FORMAT = "convert_format"
+
 
 @dataclass
 class AppConfig:
@@ -49,49 +122,3 @@ class AppConfig:
 
 
 CONFIG = AppConfig()
-
-# ENUMs
-from enum import Enum, auto
-
-class NodeType(Enum):
-    GOOGLE_SHEETS_READ = "google_sheets_read"
-    GOOGLE_SHEETS_WRITE = "google_sheets_write"
-    EXCEL_READ = "excel_read"
-    EXCEL_WRITE = "excel_write"
-    DEEPSEEK_AI = "deepseek"
-    CONDITION = "condition"
-    LOOP = "loop"
-    HTTP_GET = "http_get"
-    HTTP_POST = "http_post"
-    EMAIL = "email"
-    TELEGRAM = "telegram"
-    AI_AGENT = "ai_agent"
-    DATA_CLEAN = "data_clean"
-    PIVOT_TABLE = "pivot_table"
-
-class ConditionType(Enum):
-    GREATER = "greater"
-    LESS = "less"
-    EQUAL = "equal"
-    NOT_EQUAL = "not_equal"
-    CONTAINS = "contains"
-    NOT_CONTAINS = "not_contains"
-    STARTS_WITH = "starts_with"
-    ENDS_WITH = "ends_with"
-    IS_EMPTY = "is_empty"
-    IS_NOT_EMPTY = "is_not_empty"
-    BETWEEN = "between"
-    IN_LIST = "in_list"
-    CUSTOM = "custom"
-
-class ImageEditOperation(Enum):
-    REMOVE_BACKGROUND = "remove_background"
-    REMOVE_WATERMARK = "remove_watermark"
-    RESIZE = "resize"
-    CROP = "crop"
-    ROTATE = "rotate"
-    ENHANCE = "enhance"
-    FILTER = "filter"
-    ADD_TEXT = "add_text"
-    ADD_WATERMARK = "add_watermark"
-    CONVERT_FORMAT = "convert_format"
