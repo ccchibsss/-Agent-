@@ -23,16 +23,16 @@ class NodeType(Enum):
     LOOP = "loop"
     TRANSFORM = "transform"
     
-    # Связь и API
+    # Связь и API (Добавлены новые типы)
     HTTP_GET = "http_get"
     HTTP_POST = "http_post"
     EMAIL = "email"
     TELEGRAM = "telegram"
-    SMS = "sms"          # Новое
-    WEBHOOK = "webhook"  # Новое
+    SMS = "sms"          
+    WEBHOOK = "webhook" 
     
     # Система
-    SCHEDULE = "schedule" # Новое
+    SCHEDULE = "schedule"
 
 
 class ConditionType(Enum):
@@ -70,7 +70,7 @@ class ImageEditOperation(Enum):
 class AppConfig:
     """Глобальная конфигурация"""
     APP_TITLE: str = "Workflow Builder Pro"
-    APP_ICON: str = "🧠"
+    APP_ICON: str = ""
     APP_VERSION: str = "9.4.0"
     
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
