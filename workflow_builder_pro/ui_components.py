@@ -1,6 +1,6 @@
 """
 UI-функции для рендеринга вкладок приложения.
-Исправлено: добавление agent_id в config, выбор агента при настройке.
+Добавлены расширенные настройки подключения для Email, Telegram, HTTP.
 """
 import streamlit as st
 import pandas as pd
@@ -339,6 +339,7 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
 
 
 def _default_config(node_type: str) -> dict:
+    """Расширенный дефолтный конфиг с полями подключения."""
     defaults = {
         NodeType.GOOGLE_SHEETS_READ.value: {
             "sheet_url": "", "sheet_name": "", "range_a1": ""
@@ -356,10 +357,13 @@ def _default_config(node_type: str) -> dict:
             "items": '["элемент1", "элемент2"]', "batch_size": 10, "action": "print(item)"
         },
         NodeType.EMAIL.value: {
-            "to": "", "subject": "Уведомление", "body": "", "attachments": ""
+            "to": "", "subject": "Уведомление", "body": "",
+            "smtp_server": "", "smtp_port": 587,
+            "sender_email": "", "sender_password": ""
         },
         NodeType.TELEGRAM.value: {
-            "chat_id": "", "message": "", "parse_mode": "HTML"
+            "chat_id": "", "message": "", "parse_mode": "HTML",
+            "bot_token": ""
         },
         NodeType.AI_AGENT.value: {
             "agent_id": "", "question": "Проанализируй данные", "use_training": True
@@ -371,10 +375,16 @@ def _default_config(node_type: str) -> dict:
             "index": "", "columns": "", "values": "", "aggfunc": "sum"
         },
         NodeType.HTTP_GET.value: {
-            "url": "", "headers": "{}", "timeout": 30
+            "url": "", "headers": "{}", "timeout": 30,
+            "auth_type": "none",  # none, basic, bearer
+            "auth_username": "", "auth_password": "",
+            "auth_token": ""
         },
         NodeType.HTTP_POST.value: {
-            "url": "", "headers": "{}", "body": "{}", "timeout": 30
+            "url": "", "headers": "{}", "body": "{}", "timeout": 30,
+            "auth_type": "none",
+            "auth_username": "", "auth_password": "",
+            "auth_token": ""
         },
     }
     return defaults.get(node_type, {})
@@ -411,10 +421,18 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
         cfg['action'] = st.text_area("Действие (Python код)", cfg.get('action', 'print(item)'), height=60, key=f"loop_action_{idx}")
 
     elif btype == NodeType.EMAIL.value:
+        st.markdown("#### Параметры письма")
         cfg['to'] = st.text_input("Кому (email)", cfg.get('to', ''), key=f"email_to_{idx}")
         cfg['subject'] = st.text_input("Тема", cfg.get('subject', 'Уведомление'), key=f"email_subj_{idx}")
         cfg['body'] = st.text_area("Тело письма", cfg.get('body', ''), height=100, key=f"email_body_{idx}")
-        cfg['attachments'] = st.text_input("Вложения (через запятую)", cfg.get('attachments', ''), key=f"email_att_{idx}")
+        st.markdown("#### Настройки SMTP")
+        with st.expander("⛓ Подключение к почте (необязательно)"):
+            cfg['smtp_server'] = st.text_input("SMTP сервер", cfg.get('smtp_server', ''),
+                                               help="Например smtp.yandex.ru", key=f"smtp_srv_{idx}")
+            cfg['smtp_port'] = st.number_input("Порт", min_value=1, value=int(cfg.get('smtp_port', 587)), key=f"smtp_port_{idx}")
+            cfg['sender_email'] = st.text_input("Email отправителя", cfg.get('sender_email', ''), key=f"sender_email_{idx}")
+            cfg['sender_password'] = st.text_input("Пароль (приложения)", cfg.get('sender_password', ''),
+                                                   type="password", key=f"sender_pwd_{idx}")
 
     elif btype == NodeType.TELEGRAM.value:
         cfg['chat_id'] = st.text_input("Chat ID", cfg.get('chat_id', ''), key=f"tg_chat_{idx}")
@@ -422,6 +440,9 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
         cfg['parse_mode'] = st.selectbox("Parse Mode", ["HTML", "Markdown", "None"],
                                          index=["HTML", "Markdown", "None"].index(cfg.get('parse_mode', 'HTML')),
                                          key=f"tg_parse_{idx}")
+        with st.expander("⚡ Токен бота (опционально)"):
+            cfg['bot_token'] = st.text_input("Bot Token", cfg.get('bot_token', ''),
+                                            type="password", key=f"bot_token_{idx}")
 
     elif btype == NodeType.AI_AGENT.value:
         # Выбор агента из существующих
@@ -451,16 +472,22 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
         cfg['values'] = st.text_input("Значения", cfg.get('values', ''), key=f"pivot_val_{idx}")
         cfg['aggfunc'] = st.selectbox("Агрегация", ["sum", "mean", "count", "min", "max"], index=0, key=f"pivot_agg_{idx}")
 
-    elif btype == NodeType.HTTP_GET.value:
-        cfg['url'] = st.text_input("URL", cfg.get('url', ''), key=f"get_url_{idx}")
-        cfg['headers'] = st.text_area("Заголовки (JSON)", cfg.get('headers', '{}'), height=60, key=f"get_headers_{idx}")
-        cfg['timeout'] = st.number_input("Таймаут (сек)", 1, 120, int(cfg.get('timeout', 30)), key=f"get_timeout_{idx}")
-
-    elif btype == NodeType.HTTP_POST.value:
-        cfg['url'] = st.text_input("URL", cfg.get('url', ''), key=f"post_url_{idx}")
-        cfg['headers'] = st.text_area("Заголовки (JSON)", cfg.get('headers', '{}'), height=60, key=f"post_headers_{idx}")
-        cfg['body'] = st.text_area("Тело запроса (JSON)", cfg.get('body', '{}'), height=80, key=f"post_body_{idx}")
-        cfg['timeout'] = st.number_input("Таймаут (сек)", 1, 120, int(cfg.get('timeout', 30)), key=f"post_timeout_{idx}")
+    elif btype in (NodeType.HTTP_GET.value, NodeType.HTTP_POST.value):
+        cfg['url'] = st.text_input("URL", cfg.get('url', ''), key=f"http_url_{idx}")
+        cfg['headers'] = st.text_area("Заголовки (JSON)", cfg.get('headers', '{}'), height=60, key=f"http_headers_{idx}")
+        cfg['timeout'] = st.number_input("Таймаут (сек)", 1, 120, int(cfg.get('timeout', 30)), key=f"http_timeout_{idx}")
+        if btype == NodeType.HTTP_POST.value:
+            cfg['body'] = st.text_area("Тело запроса (JSON)", cfg.get('body', '{}'), height=80, key=f"post_body_{idx}")
+        st.markdown("#### Аутентификация")
+        auth = st.selectbox("Тип", ["none", "basic", "bearer"],
+                           index=["none","basic","bearer"].index(cfg.get('auth_type','none')),
+                           key=f"http_auth_{idx}")
+        cfg['auth_type'] = auth
+        if auth == "basic":
+            cfg['auth_username'] = st.text_input("Логин", cfg.get('auth_username', ''), key=f"http_user_{idx}")
+            cfg['auth_password'] = st.text_input("Пароль", cfg.get('auth_password', ''), type="password", key=f"http_pwd_{idx}")
+        elif auth == "bearer":
+            cfg['auth_token'] = st.text_input("Токен", cfg.get('auth_token', ''), type="password", key=f"http_token_{idx}")
 
     block['config'] = cfg
 
