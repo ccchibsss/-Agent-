@@ -1,5 +1,6 @@
 """
 Генератор и исполнитель workflow.
+Исправлен поиск agent_id для блока ai_agent.
 """
 import streamlit as st
 import json
@@ -16,6 +17,9 @@ from condition_parser import RussianConditionParser
 from ai_agent import AgentManager
 from table_manager import TableManager
 import logging
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,7 @@ class AIWorkflowGenerator:
 2. Типы: google_sheets_read, excel_read, deepseek, condition, loop, http_get, http_post,
    email, telegram, ai_agent, data_clean, pivot_table.
 3. Условия на русском.
+4. Для ai_agent в config обязательно указывать agent_id (например, id существующего агента).
 
 Верни ТОЛЬКО JSON массив.
 """
@@ -120,7 +125,7 @@ class WorkflowExecutor:
         elif node_type == NodeType.TELEGRAM.value:
             return self._execute_telegram(config)
         elif node_type == NodeType.AI_AGENT.value:
-            return self._execute_ai_agent(config)
+            return self._execute_ai_agent(node)
         elif node_type == NodeType.DATA_CLEAN.value:
             return self._execute_data_clean(config)
         elif node_type == NodeType.PIVOT_TABLE.value:
@@ -195,33 +200,98 @@ class WorkflowExecutor:
 
     def _execute_http_get(self, config):
         url = config.get('url','')
-        if not url: return {'error':'URL не указан'}
-        resp = requests.get(url, timeout=CONFIG.API_TIMEOUT)
-        return {'status':resp.status_code, 'data':resp.json() if resp.status_code==200 else None}
+        headers = config.get('headers','{}')
+        if isinstance(headers, str):
+            try: headers = json.loads(headers)
+            except: headers = {}
+        auth_type = config.get('auth_type','none')
+        if auth_type == 'basic':
+            from requests.auth import HTTPBasicAuth
+            auth = HTTPBasicAuth(config.get('auth_username',''), config.get('auth_password',''))
+        else:
+            auth = None
+        if auth_type == 'bearer':
+            headers['Authorization'] = f"Bearer {config.get('auth_token','')}"
+        resp = requests.get(url, headers=headers, auth=auth, timeout=float(config.get('timeout',30)))
+        return {'status': resp.status_code, 'data': resp.json() if resp.status_code==200 else None}
 
     def _execute_http_post(self, config):
         url = config.get('url','')
-        if not url: return {'error':'URL не указан'}
+        headers = config.get('headers','{}')
+        if isinstance(headers, str):
+            try: headers = json.loads(headers)
+            except: headers = {}
         body = config.get('body','{}')
-        if isinstance(body, str): body = json.loads(body)
-        resp = requests.post(url, json=body, timeout=CONFIG.API_TIMEOUT)
-        return {'status':resp.status_code, 'data':resp.json() if resp.status_code==200 else None}
+        if isinstance(body, str):
+            try: body = json.loads(body)
+            except: body = {}
+        auth_type = config.get('auth_type','none')
+        if auth_type == 'basic':
+            from requests.auth import HTTPBasicAuth
+            auth = HTTPBasicAuth(config.get('auth_username',''), config.get('auth_password',''))
+        else:
+            auth = None
+        if auth_type == 'bearer':
+            headers['Authorization'] = f"Bearer {config.get('auth_token','')}"
+        resp = requests.post(url, json=body, headers=headers, auth=auth, timeout=float(config.get('timeout',30)))
+        return {'status': resp.status_code, 'data': resp.json() if resp.status_code==200 else None}
 
     def _execute_email(self, config):
-        return {'to': config.get('to',''), 'subject': config.get('subject',''), 'body': config.get('body',''), 'status':'ready'}
+        to = config.get('to','')
+        subject = config.get('subject','')
+        body = config.get('body','')
+        smtp_server = config.get('smtp_server') or st.secrets.get("SMTP_SERVER", "")
+        smtp_port = int(config.get('smtp_port') or st.secrets.get("SMTP_PORT", 587))
+        sender_email = config.get('sender_email') or st.secrets.get("SENDER_EMAIL", "")
+        sender_password = config.get('sender_password') or st.secrets.get("SENDER_PASSWORD", "")
+        if not smtp_server or not sender_email or not sender_password:
+            return {"to": to, "subject": subject, "body": body, "status": "ready", "info": "Настройки SMTP не заданы"}
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = sender_email
+            msg['To'] = to
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain'))
+            server = smtplib.SMTP(smtp_server, smtp_port)
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+            server.quit()
+            return {"to": to, "subject": subject, "body": body, "status": "sent"}
+        except Exception as e:
+            logger.error(f"Ошибка отправки email: {e}")
+            return {"to": to, "subject": subject, "body": body, "status": "error", "error": str(e)}
 
     def _execute_telegram(self, config):
-        return {'chat_id': config.get('chat_id',''), 'message': config.get('message',''), 'status':'ready'}
+        chat_id = config.get('chat_id','')
+        message = config.get('message','')
+        parse_mode = config.get('parse_mode','HTML')
+        bot_token = config.get('bot_token') or st.secrets.get("TELEGRAM_BOT_TOKEN", "")
+        if not bot_token:
+            return {"chat_id": chat_id, "message": message, "status": "ready", "info": "Токен бота не задан"}
+        try:
+            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            payload = {"chat_id": chat_id, "text": message, "parse_mode": parse_mode}
+            resp = requests.post(url, json=payload, timeout=10)
+            resp.raise_for_status()
+            return {"chat_id": chat_id, "message": message, "status": "sent"}
+        except Exception as e:
+            logger.error(f"Ошибка отправки Telegram: {e}")
+            return {"chat_id": chat_id, "message": message, "status": "error", "error": str(e)}
 
-    def _execute_ai_agent(self, config):
+    def _execute_ai_agent(self, node: Dict):
         if not self.agent_manager:
-            return {'error':'Менеджер агентов не инициализирован'}
-        agent_id = config.get('agent_id')
-        if not agent_id or agent_id not in self.agent_manager.agents:
-            return {'error':'Агент не найден'}
+            return {'error': 'Менеджер агентов не инициализирован'}
+        config = node.get('config', {})
+        agent_id = config.get('agent_id') or node.get('agent_id')
+        if not agent_id:
+            return {'error': 'agent_id не указан в блоке'}
+        if agent_id not in self.agent_manager.agents:
+            return {'error': f'Агент с ID {agent_id} не найден'}
         agent = self.agent_manager.agents[agent_id]
-        question = config.get('question','')
-        response = agent.generate_response(question, self.api_key, config.get('use_training',True))
+        question = config.get('question', '')
+        use_training = config.get('use_training', True)
+        response = agent.generate_response(question, self.api_key, use_training)
         return {'agent': agent.name, 'question': question, 'response': response}
 
     def _execute_data_clean(self, config):
