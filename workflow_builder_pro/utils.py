@@ -266,6 +266,7 @@ def initialize_session_state():
         'uploaded_images': {},
         'processed_images': {},
         'image_batch_progress': 0,
+        'chat_input': '',                      # <--- ДОБАВЛЕНО для исправления ошибки
     }
     
     for key, value in defaults.items():
