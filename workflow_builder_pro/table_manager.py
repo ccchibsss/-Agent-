@@ -232,7 +232,7 @@ class TableManager:
         return safe_globals.get('df', df)
     
     # ================== НОВЫЙ МЕТОД ==================
-    @handle_errors(default_return=None)
+        @handle_errors(default_return=None)
     def ai_edit_excel_file(
         self,
         input_file: Union[str, BytesIO],
@@ -240,19 +240,6 @@ class TableManager:
         api_key: str,
         sheet_name: Union[str, int] = 0
     ) -> Dict[str, Any]:
-        """
-        Загружает Excel, применяет ИИ-трансформации и возвращает DataFrame + BytesIO для скачивания.
-        
-        Returns:
-            {
-                'success': bool,
-                'df': pd.DataFrame (изменённый),
-                'output_bytes': BytesIO (готов к скачиванию),
-                'transformations_applied': list,
-                'message': str,
-                'error': str
-            }
-        """
         result = {
             'success': False,
             'df': None,
@@ -261,17 +248,14 @@ class TableManager:
             'message': '',
             'error': None
         }
-        # 1. Чтение файла
         df = self.read_excel(input_file, sheet_name=sheet_name, use_cache=False)
         if df is None:
             result['error'] = "Не удалось прочитать Excel файл"
             return result
-        # 2. ИИ-анализ
         ai_res = self.ai_analyze_dataframe(df, instruction, api_key)
         if 'error' in ai_res:
             result['error'] = f"Ошибка ИИ: {ai_res['error']}"
             return result
-        # 3. Применение трансформаций
         current_df = df.copy()
         applied = []
         for trans in ai_res.get('transformations', []):
@@ -282,11 +266,10 @@ class TableManager:
                 current_df = self.execute_transformation(current_df, code)
                 applied.append(trans.get('description', code[:50]))
             except Exception as e:
-                result['error'] = f"Ошибка выполнения трансформации: {e}"
+                result['error'] = f"Ошибка выполнения: {e}"
                 return result
         result['df'] = current_df
         result['transformations_applied'] = applied
-        # 4. Подготовка BytesIO для скачивания
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             current_df.to_excel(writer, sheet_name='Sheet1', index=False)
