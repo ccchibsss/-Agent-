@@ -1,6 +1,3 @@
-"""
-Глобальная конфигурация приложения и пути для автосохранения.
-"""
 from dataclasses import dataclass, field
 from typing import Dict, Tuple
 from pathlib import Path
@@ -30,7 +27,7 @@ class AppConfig:
     MAX_TOKENS: int = 4096
     MAX_ROWS_GOOGLE: int = 10000
     MAX_ROWS_EXCEL: int = 100000
-    SUPPORTED_EXCEL_FORMATS: Tuple[str, ...] = ("xlsx", "xlsm", "xls")
+    SUPPORTED_EXCEL_FORMATS: Tuple[str, ...] = ("xlsx", "xlsm", "xls", "csv")
     DEFAULT_SHEET_NAME: str = "Sheet1"
     MAX_IMAGE_UPLOAD: int = 10000
     SUPPORTED_IMAGE_FORMATS: Tuple[str, ...] = ("jpg", "jpeg", "png", "webp", "bmp", "gif")
@@ -40,18 +37,13 @@ class AppConfig:
     MOBILE_BREAKPOINT: int = 768
     ITEMS_PER_PAGE: int = 10
     COLORS: Dict[str, str] = field(default_factory=lambda: {
-        'primary': '#6974dc',
-        'primary_dark': '#764ba2',
-        'success': '#00ff88',
-        'error': '#ff4444',
-        'warning': '#ffa500',
-        'accent': '#4ECDC4',
-        'dark_bg': '#1a1a2e',
-        'dark_bg_2': '#16213e',
+        'primary': '#6974dc', 'primary_dark': '#764ba2',
+        'success': '#00ff88', 'error': '#ff4444',
+        'warning': '#ffa500', 'accent': '#4ECDC4',
+        'dark_bg': '#1a1a2e', 'dark_bg_2': '#16213e',
         'card_bg': '#ffffff'
     })
-    # Новая опция: URL Google Sheets для хранения агентов (облачное постоянство)
-    AGENTS_GSHEET_URL: str = ""   # если заполнить, агенты будут сохраняться в Google-таблице
+    AGENTS_GSHEET_URL: str = ""
 
 
 CONFIG = AppConfig()
