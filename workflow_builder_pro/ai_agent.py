@@ -1,7 +1,3 @@
-"""
-Классы ИИ агентов и менеджер агентов.
-Добавлено сохранение/загрузка агентов в Google Sheets (по URL из конфига).
-"""
 import streamlit as st
 import json
 import hashlib
@@ -16,8 +12,6 @@ from config import CONFIG
 from utils import save_agents_auto, handle_errors, logger
 
 class AIAgent:
-    """Класс для создания и обучения ИИ агентов"""
-    
     def __init__(self, name: str, role: str, system_prompt: str, agent_id: Optional[str] = None):
         self.id = agent_id or hashlib.md5(f"{name}{datetime.now().isoformat()}".encode()).hexdigest()[:8]
         self.name = name
@@ -190,8 +184,6 @@ class AIAgent:
 
 
 class AgentManager:
-    """Управляет коллекцией ИИ агентов с сохранением в Google Sheets (если указан URL)"""
-    
     def __init__(self, api_key: Optional[str] = None):
         self.agents: Dict[str, AIAgent] = {}
         self.current_agent_id: Optional[str] = None
@@ -199,39 +191,11 @@ class AgentManager:
         self.load_agents()
     
     def load_agents(self):
-        """Загружает агентов: сначала из Google Sheets (если URL задан), затем из файла"""
-        gsheet_url = CONFIG.AGENTS_GSHEET_URL
-        loaded = False
-        if gsheet_url and self.api_key:
-            try:
-                # Читаем агентов из Google Sheets
-                df = self._read_gsheet(gsheet_url)
-                if df is not None and not df.empty:
-                    agents_dict = {}
-                    for _, row in df.iterrows():
-                        try:
-                            agent_data = json.loads(row.get('agent_json', '{}'))
-                            if agent_data:
-                                agents_dict[agent_data['id']] = agent_data
-                        except:
-                            continue
-                    if agents_dict:
-                        st.session_state.agents = agents_dict
-                        st.session_state.current_agent_id = next(iter(agents_dict.keys()))
-                        loaded = True
-                        logger.info("Агенты загружены из Google Sheets")
-            except Exception as e:
-                logger.warning(f"Не удалось загрузить агентов из Google Sheets: {e}")
-
-        if not loaded:
-            # Fallback: загрузка из локального файла
-            if 'agents' not in st.session_state:
-                default_agents = self._create_default_agents()
-                st.session_state.agents = {agent.id: agent.to_dict() for agent in default_agents}
-                st.session_state.current_agent_id = default_agents[0].id if default_agents else None
-                logger.info("Использованы агенты по умолчанию или из локального файла")
-        
-        # Восстанавливаем объекты AIAgent из словарей
+        if 'agents' not in st.session_state:
+            default_agents = self._create_default_agents()
+            st.session_state.agents = {agent.id: agent.to_dict() for agent in default_agents}
+            st.session_state.current_agent_id = default_agents[0].id if default_agents else None
+            logger.info("Использованы агенты по умолчанию")
         for agent_id, agent_dict in st.session_state.agents.items():
             if agent_id not in self.agents:
                 self.agents[agent_id] = AIAgent.from_dict(agent_dict)
@@ -272,48 +236,9 @@ class AgentManager:
         return agents
     
     def save_agents(self):
-        """Сохраняет агентов в session_state и в Google Sheets (если настроено)"""
         st.session_state.agents = {agent_id: agent.to_dict() for agent_id, agent in self.agents.items()}
         st.session_state.current_agent_id = self.current_agent_id
-        
-        gsheet_url = CONFIG.AGENTS_GSHEET_URL
-        if gsheet_url and self.api_key:
-            try:
-                self._save_to_gsheet(gsheet_url, st.session_state.agents)
-                logger.info("Агенты сохранены в Google Sheets")
-            except Exception as e:
-                logger.warning(f"Не удалось сохранить агентов в Google Sheets: {e}")
-        
-        # Также сохраняем локально (для разработки и fallback)
         save_agents_auto(st.session_state.agents)
-    
-    def _read_gsheet(self, url: str) -> Optional[pd.DataFrame]:
-        """Читает данные из Google Sheets (публичная таблица или с API)"""
-        if '/d/' in url:
-            sheet_id = url.split('/d/')[1].split('/')[0]
-        else:
-            sheet_id = url
-        csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
-        resp = requests.get(csv_url, timeout=30)
-        resp.raise_for_status()
-        return pd.read_csv(BytesIO(resp.content))
-    
-    def _save_to_gsheet(self, url: str, agents_dict: Dict[str, Dict]):
-        """Сохраняет агентов в Google Sheets через запись (требует Google Sheets API)"""
-        # Для простоты используем Google Sheets API через сервисный аккаунт
-        # Но здесь приведён вариант записи через тот же API, который уже используется в table_manager.
-        # В реальном проекте можно добавить полноценный метод записи.
-        # Пока оставим заглушку с предупреждением.
-        logger.warning("Сохранение в Google Sheets требует настройки Google Sheets API. Пока используется только локальное сохранение.")
-        # Для реальной записи можно использовать библиотеку gspread.
-        # Ниже примерный код с gspread (требует настроек secrets)
-        # if not hasattr(self, '_gs_client'):
-        #     import gspread
-        #     gc = gspread.service_account(filename=st.secrets.get("GSPREAD_CREDENTIALS", ""))
-        #     self._gs_client = gc
-        # sh = self._gs_client.open_by_url(url)
-        # worksheet = sh.sheet1
-        # ... запись данных ...
     
     def add_agent(self, name: str, role: str, system_prompt: str) -> AIAgent:
         agent = AIAgent(name, role, system_prompt)
