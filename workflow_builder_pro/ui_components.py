@@ -2,7 +2,7 @@
 UI-функции для рендеринга вкладок приложения.
 Добавлены расширенные настройки подключения для Email, Telegram, HTTP.
 Улучшена работа с таблицами: быстрый предпросмотр, сохранение в Google Sheets.
-Добавлена вкладка "Экономика" – юнит-экономика OZON с живыми формулами Excel.
+Добавлена вкладка "Экономика" – массовая юнит-экономика с записью в Google Sheets и Excel.
 """
 import streamlit as st
 import pandas as pd
@@ -34,6 +34,12 @@ try:
 except ImportError:
     BS_AVAILABLE = False
 
+try:
+    import docx
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
 
 # ====================== ЧАТ ======================
 def render_chat_tab(agent_manager: AgentManager, api_key: str):
@@ -43,13 +49,8 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
         return
     st.subheader(f"💬 {current.name}")
     st.caption(f"Роль: {current.role}")
-
     st.markdown('<div class="chat-input-container">', unsafe_allow_html=True)
-    user_input = st.text_area(
-        "✏️ Напишите сообщение...", height=80,
-        key="chat_input", placeholder="Введите ваш вопрос...",
-        label_visibility="collapsed"
-    )
+    user_input = st.text_area("✏️ Напишите сообщение...", height=80, key="chat_input", placeholder="Введите ваш вопрос...", label_visibility="collapsed")
     col1, col2, col3, col4 = st.columns([1, 1, 1, 3])
     with col1:
         use_training = st.checkbox("📚 Обуч.", value=True, key="chat_use_training")
@@ -75,19 +76,15 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
                 agent_manager.save_agents()
                 st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
-
     st.markdown("### 📜 История диалога")
     if not st.session_state.agent_messages:
         st.info("💬 Начните диалог, введя сообщение выше")
     else:
         for msg in st.session_state.agent_messages:
             if msg['role'] == 'user':
-                st.markdown(f'<div class="chat-message-user"><strong>👤 Вы:</strong><br>{msg["content"]}</div>',
-                            unsafe_allow_html=True)
+                st.markdown(f'<div class="chat-message-user"><strong>👤 Вы:</strong><br>{msg["content"]}</div>', unsafe_allow_html=True)
             else:
-                st.markdown(f'<div class="chat-message-agent"><strong>🤖 {current.name}:</strong><br>{msg["content"]}</div>',
-                            unsafe_allow_html=True)
-
+                st.markdown(f'<div class="chat-message-agent"><strong>🤖 {current.name}:</strong><br>{msg["content"]}</div>', unsafe_allow_html=True)
     if st.session_state.get('voice_show_upload'):
         with st.expander("🎤 Голосовой ввод", expanded=True):
             audio_file = st.file_uploader("Выберите аудио", type=["wav", "mp3"], key="voice_upload")
@@ -100,7 +97,6 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
                     st.rerun()
                 else:
                     st.error("Не удалось распознать речь")
-
     if st.button("🗑️ Очистить диалог", width='stretch'):
         st.session_state.agent_messages = []
         save_messages_auto([])
@@ -137,8 +133,7 @@ def render_training_tab(agent_manager: AgentManager):
                 agent_manager.save_agents()
                 st.rerun()
     with st.expander("📚 Массовое обучение (из текста)"):
-        bulk = st.text_area("Вопрос -> Ответ (каждая строка)", height=150,
-                            placeholder="Как анализировать? -> Для анализа...")
+        bulk = st.text_area("Вопрос -> Ответ (каждая строка)", height=150, placeholder="Как анализировать? -> Для анализа...")
         if st.button("🚀 Обучить на всех примерах"):
             lines = bulk.strip().split('\n')
             added = 0
@@ -227,12 +222,7 @@ def render_analytics_tab(agent_manager: AgentManager):
 # ====================== УСЛОВИЯ ======================
 def render_conditions_tab():
     st.subheader("🔀 Русские условия")
-    st.markdown("""
-    <div class="info-box">
-    <b>Примеры:</b><br>
-    • если цена больше 1000 то отправить уведомление<br>
-    • если статус равно 'успех' иначе отправить ошибку
-    </div>""", unsafe_allow_html=True)
+    st.markdown("""<div class="info-box"><b>Примеры:</b><br>• если цена больше 1000 то отправить уведомление<br>• если статус равно 'успех' иначе отправить ошибку</div>""", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
         for ex in RussianConditionParser.EXAMPLES:
@@ -256,7 +246,6 @@ def render_conditions_tab():
 def render_workflow_tab(agent_manager: AgentManager, api_key: str):
     st.subheader("🤖 Конструктор Workflow")
     col1, col2 = st.columns([1, 2])
-
     with col1:
         st.markdown("### 📦 Блоки")
         blocks = [
@@ -278,35 +267,16 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
                 cfg = _default_config(btype)
                 if btype == NodeType.AI_AGENT.value:
                     cfg['agent_id'] = ""
-                st.session_state.workflow.append({
-                    "id": len(st.session_state.workflow),
-                    "name": name,
-                    "type": btype,
-                    "config": cfg,
-                    "status": WorkflowStatus.PENDING.value
-                })
+                st.session_state.workflow.append({"id": len(st.session_state.workflow), "name": name, "type": btype, "config": cfg, "status": WorkflowStatus.PENDING.value})
                 st.rerun()
-
         st.markdown("### 🧠 Агенты")
         for agent in agent_manager.agents.values():
             if st.button(f"🧠 {agent.name}", key=f"wf_agent_{agent.id}", width='stretch'):
-                st.session_state.workflow.append({
-                    "id": len(st.session_state.workflow),
-                    "name": f"Агент: {agent.name}",
-                    "type": NodeType.AI_AGENT.value,
-                    "config": {
-                        "agent_id": agent.id,
-                        "question": "",
-                        "use_training": True
-                    },
-                    "status": WorkflowStatus.PENDING.value
-                })
+                st.session_state.workflow.append({"id": len(st.session_state.workflow), "name": f"Агент: {agent.name}", "type": NodeType.AI_AGENT.value, "config": {"agent_id": agent.id, "question": "", "use_training": True}, "status": WorkflowStatus.PENDING.value})
                 st.rerun()
-
         st.markdown("---")
         st.markdown("### 🪄 ИИ-генератор")
-        desc = st.text_area("Опишите workflow на русском", height=100,
-                            placeholder="Пример: прочитай Google таблицу, если цена больше 1000 отправь email")
+        desc = st.text_area("Опишите workflow на русском", height=100, placeholder="Пример: прочитай Google таблицу, если цена больше 1000 отправь email")
         if st.button("✨ Сгенерировать Workflow", width='stretch'):
             if desc and api_key:
                 with st.spinner("ИИ создаёт workflow..."):
@@ -320,7 +290,6 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
                         st.error("Не удалось сгенерировать workflow")
             else:
                 st.warning("Введите описание и API ключ")
-
     with col2:
         st.markdown("### 📋 Текущий workflow")
         if not st.session_state.workflow:
@@ -332,19 +301,14 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
                     cls = "workflow-node-success"
                 elif block.get('status') == WorkflowStatus.ERROR.value:
                     cls = "workflow-node-error"
-                st.markdown(f"""<div class="workflow-node {cls}">
-                    <b>{block.get('name')}</b> <small>#{i + 1}</small><br>
-                    <small>{block.get('type')}</small>
-                </div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="workflow-node {cls}"><b>{block.get('name')}</b> <small>#{i + 1}</small><br><small>{block.get('type')}</small></div>""", unsafe_allow_html=True)
                 if i < len(st.session_state.workflow) - 1:
                     st.markdown('<div class="workflow-connector">▼</div>', unsafe_allow_html=True)
-
                 with st.expander(f"⚙️ Настроить {block.get('name')}"):
                     _render_block_config(block, i, agent_manager)
                     if st.button("🗑️ Удалить блок", key=f"del_wf_{i}"):
                         st.session_state.workflow.pop(i)
                         st.rerun()
-
             st.markdown("---")
             col_act1, col_act2 = st.columns(2)
             with col_act1:
@@ -359,51 +323,18 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
 
 def _default_config(node_type: str) -> dict:
     defaults = {
-        NodeType.GOOGLE_SHEETS_READ.value: {
-            "sheet_url": "", "sheet_name": "", "range_a1": ""
-        },
-        NodeType.EXCEL_READ.value: {
-            "file_path": "", "sheet_name": 0
-        },
-        NodeType.DEEPSEEK_AI.value: {
-            "system_prompt": "Ты полезный ассистент", "user_prompt": "", "temperature": 0.3
-        },
-        NodeType.CONDITION.value: {
-            "condition": "если цена больше 1000"
-        },
-        NodeType.LOOP.value: {
-            "items": '["элемент1", "элемент2"]', "batch_size": 10, "action": "print(item)"
-        },
-        NodeType.EMAIL.value: {
-            "to": "", "subject": "Уведомление", "body": "",
-            "smtp_server": "", "smtp_port": 587,
-            "sender_email": "", "sender_password": ""
-        },
-        NodeType.TELEGRAM.value: {
-            "chat_id": "", "message": "", "parse_mode": "HTML",
-            "bot_token": ""
-        },
-        NodeType.AI_AGENT.value: {
-            "agent_id": "", "question": "Проанализируй данные", "use_training": True
-        },
-        NodeType.DATA_CLEAN.value: {
-            "remove_duplicates": True, "remove_empty": True, "fill_na": ""
-        },
-        NodeType.PIVOT_TABLE.value: {
-            "index": "", "columns": "", "values": "", "aggfunc": "sum"
-        },
-        NodeType.HTTP_GET.value: {
-            "url": "", "headers": "{}", "timeout": 30,
-            "auth_type": "none",
-            "auth_username": "", "auth_password": "",
-            "auth_token": ""
-        },
-        NodeType.HTTP_POST.value: {
-            "url": "", "headers": "{}", "body": "{}", "timeout": 30,
-            "auth_type": "none",
-            "auth_username": "", "auth_password": "",
-            "auth_token": ""
-        },
+        NodeType.GOOGLE_SHEETS_READ.value: {"sheet_url": "", "sheet_name": "", "range_a1": ""},
+        NodeType.EXCEL_READ.value: {"file_path": "", "sheet_name": 0},
+        NodeType.DEEPSEEK_AI.value: {"system_prompt": "Ты полезный ассистент", "user_prompt": "", "temperature": 0.3},
+        NodeType.CONDITION.value: {"condition": "если цена больше 1000"},
+        NodeType.LOOP.value: {"items": '["элемент1", "элемент2"]', "batch_size": 10, "action": "print(item)"},
+        NodeType.EMAIL.value: {"to": "", "subject": "Уведомление", "body": "", "smtp_server": "", "smtp_port": 587, "sender_email": "", "sender_password": ""},
+        NodeType.TELEGRAM.value: {"chat_id": "", "message": "", "parse_mode": "HTML", "bot_token": ""},
+        NodeType.AI_AGENT.value: {"agent_id": "", "question": "Проанализируй данные", "use_training": True},
+        NodeType.DATA_CLEAN.value: {"remove_duplicates": True, "remove_empty": True, "fill_na": ""},
+        NodeType.PIVOT_TABLE.value: {"index": "", "columns": "", "values": "", "aggfunc": "sum"},
+        NodeType.HTTP_GET.value: {"url": "", "headers": "{}", "timeout": 30, "auth_type": "none", "auth_username": "", "auth_password": "", "auth_token": ""},
+        NodeType.HTTP_POST.value: {"url": "", "headers": "{}", "body": "{}", "timeout": 30, "auth_type": "none", "auth_username": "", "auth_password": "", "auth_token": ""},
     }
     return defaults.get(node_type, {})
 
@@ -411,33 +342,27 @@ def _default_config(node_type: str) -> dict:
 def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
     cfg = block.get('config', {})
     btype = block.get('type')
-
     if btype == NodeType.GOOGLE_SHEETS_READ.value:
         cfg['sheet_url'] = st.text_input("URL таблицы", cfg.get('sheet_url', ''), key=f"gs_url_{idx}")
         cfg['sheet_name'] = st.text_input("Имя листа", cfg.get('sheet_name', ''), key=f"gs_sheet_{idx}")
         cfg['range_a1'] = st.text_input("Диапазон (A1:B10)", cfg.get('range_a1', ''), key=f"gs_range_{idx}")
-
     elif btype == NodeType.EXCEL_READ.value:
         cfg['file_path'] = st.text_input("Путь к файлу", cfg.get('file_path', ''), key=f"ex_path_{idx}")
         cfg['sheet_name'] = st.text_input("Лист (индекс или имя)", cfg.get('sheet_name', 0), key=f"ex_sheet_{idx}")
-
     elif btype == NodeType.DEEPSEEK_AI.value:
         cfg['system_prompt'] = st.text_area("Системный промпт", cfg.get('system_prompt', ''), height=80, key=f"ai_sys_{idx}")
         cfg['user_prompt'] = st.text_area("Запрос пользователя", cfg.get('user_prompt', ''), height=80, key=f"ai_user_{idx}")
         cfg['temperature'] = st.slider("Температура", 0.0, 1.0, float(cfg.get('temperature', 0.3)), key=f"ai_temp_{idx}")
-
     elif btype == NodeType.CONDITION.value:
         cfg['condition'] = st.text_area("Условие на русском", cfg.get('condition', ''), height=80, key=f"cond_{idx}")
         if cfg.get('condition'):
             parsed = RussianConditionParser.parse(cfg['condition'])
             if parsed.get('code'):
                 st.code(parsed['code'], language='python')
-
     elif btype == NodeType.LOOP.value:
         cfg['items'] = st.text_area("Элементы (JSON массив)", cfg.get('items', '["элемент1"]'), height=80, key=f"loop_items_{idx}")
         cfg['batch_size'] = st.number_input("Размер пакета", 1, 1000, int(cfg.get('batch_size', 10)), key=f"loop_batch_{idx}")
         cfg['action'] = st.text_area("Действие (Python код)", cfg.get('action', 'print(item)'), height=60, key=f"loop_action_{idx}")
-
     elif btype == NodeType.EMAIL.value:
         st.markdown("#### Параметры письма")
         cfg['to'] = st.text_input("Кому (email)", cfg.get('to', ''), key=f"email_to_{idx}")
@@ -445,23 +370,16 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
         cfg['body'] = st.text_area("Тело письма", cfg.get('body', ''), height=100, key=f"email_body_{idx}")
         st.markdown("#### Настройки SMTP")
         with st.expander("⛓ Подключение к почте (необязательно)"):
-            cfg['smtp_server'] = st.text_input("SMTP сервер", cfg.get('smtp_server', ''),
-                                               help="Например smtp.yandex.ru", key=f"smtp_srv_{idx}")
+            cfg['smtp_server'] = st.text_input("SMTP сервер", cfg.get('smtp_server', ''), help="Например smtp.yandex.ru", key=f"smtp_srv_{idx}")
             cfg['smtp_port'] = st.number_input("Порт", min_value=1, value=int(cfg.get('smtp_port', 587)), key=f"smtp_port_{idx}")
             cfg['sender_email'] = st.text_input("Email отправителя", cfg.get('sender_email', ''), key=f"sender_email_{idx}")
-            cfg['sender_password'] = st.text_input("Пароль (приложения)", cfg.get('sender_password', ''),
-                                                   type="password", key=f"sender_pwd_{idx}")
-
+            cfg['sender_password'] = st.text_input("Пароль (приложения)", cfg.get('sender_password', ''), type="password", key=f"sender_pwd_{idx}")
     elif btype == NodeType.TELEGRAM.value:
         cfg['chat_id'] = st.text_input("Chat ID", cfg.get('chat_id', ''), key=f"tg_chat_{idx}")
         cfg['message'] = st.text_area("Сообщение", cfg.get('message', ''), height=80, key=f"tg_msg_{idx}")
-        cfg['parse_mode'] = st.selectbox("Parse Mode", ["HTML", "Markdown", "None"],
-                                         index=["HTML", "Markdown", "None"].index(cfg.get('parse_mode', 'HTML')),
-                                         key=f"tg_parse_{idx}")
+        cfg['parse_mode'] = st.selectbox("Parse Mode", ["HTML", "Markdown", "None"], index=["HTML","Markdown","None"].index(cfg.get('parse_mode','HTML')), key=f"tg_parse_{idx}")
         with st.expander("⚡ Токен бота (опционально)"):
-            cfg['bot_token'] = st.text_input("Bot Token", cfg.get('bot_token', ''),
-                                            type="password", key=f"bot_token_{idx}")
-
+            cfg['bot_token'] = st.text_input("Bot Token", cfg.get('bot_token', ''), type="password", key=f"bot_token_{idx}")
     elif btype == NodeType.AI_AGENT.value:
         agent_ids = list(agent_manager.agents.keys())
         agent_names = [agent_manager.agents[a].name for a in agent_ids]
@@ -477,18 +395,15 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
             st.warning("Нет доступных агентов")
         cfg['question'] = st.text_area("Вопрос агенту", cfg.get('question', ''), height=60, key=f"agent_q_{idx}")
         cfg['use_training'] = st.checkbox("Использовать обучение", cfg.get('use_training', True), key=f"agent_train_{idx}")
-
     elif btype == NodeType.DATA_CLEAN.value:
         cfg['remove_duplicates'] = st.checkbox("Удалить дубликаты", cfg.get('remove_duplicates', True), key=f"clean_dup_{idx}")
         cfg['remove_empty'] = st.checkbox("Удалить пустые строки", cfg.get('remove_empty', True), key=f"clean_empty_{idx}")
         cfg['fill_na'] = st.text_input("Заполнить пропуски значением", cfg.get('fill_na', ''), key=f"clean_fill_{idx}")
-
     elif btype == NodeType.PIVOT_TABLE.value:
         cfg['index'] = st.text_input("Индекс (столбцы через запятую)", cfg.get('index', ''), key=f"pivot_idx_{idx}")
         cfg['columns'] = st.text_input("Колонки", cfg.get('columns', ''), key=f"pivot_col_{idx}")
         cfg['values'] = st.text_input("Значения", cfg.get('values', ''), key=f"pivot_val_{idx}")
         cfg['aggfunc'] = st.selectbox("Агрегация", ["sum", "mean", "count", "min", "max"], index=0, key=f"pivot_agg_{idx}")
-
     elif btype in (NodeType.HTTP_GET.value, NodeType.HTTP_POST.value):
         cfg['url'] = st.text_input("URL", cfg.get('url', ''), key=f"http_url_{idx}")
         cfg['headers'] = st.text_area("Заголовки (JSON)", cfg.get('headers', '{}'), height=60, key=f"http_headers_{idx}")
@@ -496,32 +411,26 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
         if btype == NodeType.HTTP_POST.value:
             cfg['body'] = st.text_area("Тело запроса (JSON)", cfg.get('body', '{}'), height=80, key=f"post_body_{idx}")
         st.markdown("#### Аутентификация")
-        auth = st.selectbox("Тип", ["none", "basic", "bearer"],
-                           index=["none", "basic", "bearer"].index(cfg.get('auth_type', 'none')),
-                           key=f"http_auth_{idx}")
+        auth = st.selectbox("Тип", ["none", "basic", "bearer"], index=["none","basic","bearer"].index(cfg.get('auth_type','none')), key=f"http_auth_{idx}")
         cfg['auth_type'] = auth
         if auth == "basic":
             cfg['auth_username'] = st.text_input("Логин", cfg.get('auth_username', ''), key=f"http_user_{idx}")
             cfg['auth_password'] = st.text_input("Пароль", cfg.get('auth_password', ''), type="password", key=f"http_pwd_{idx}")
         elif auth == "bearer":
             cfg['auth_token'] = st.text_input("Токен", cfg.get('auth_token', ''), type="password", key=f"http_token_{idx}")
-
     block['config'] = cfg
 
 
 def _execute_workflow(agent_manager, api_key):
     progress = st.progress(0)
     status = st.empty()
-
     def update_progress(idx, node):
         progress.progress((idx + 1) / len(st.session_state.workflow))
         status.text(f"🔄 {node.get('name')}")
-
     table_manager = st.session_state.table_manager
     executor = WorkflowExecutor(st.session_state.workflow, api_key, agent_manager, table_manager)
     result = executor.execute(update_progress)
     progress.progress(1.0)
-
     if result['success']:
         st.balloons()
         st.success(f"✅ Workflow выполнен за {result['execution_time']:.1f}с")
@@ -554,8 +463,7 @@ def render_tables_tab(api_key: str):
                         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
                             table_manager.write_excel(df, tmp.name)
                             with open(tmp.name, 'rb') as f:
-                                st.download_button("📥 Скачать", f, f"{table_id}.xlsx",
-                                                   key=f"dl_saved_{table_id}", width='stretch')
+                                st.download_button("📥 Скачать", f, f"{table_id}.xlsx", key=f"dl_saved_{table_id}", width='stretch')
                     with col_c:
                         if st.button("🗑️ Удалить", key=f"del_saved_{table_id}", width='stretch'):
                             del st.session_state.saved_tables[table_id]
@@ -585,8 +493,7 @@ def render_tables_tab(api_key: str):
                             st.rerun()
         else:
             uploaded = st.file_uploader("Excel или CSV", type=['xlsx', 'xls', 'csv'], key="excel_upload")
-            max_rows = st.slider("Строк для предпросмотра (0 = все)", min_value=0, max_value=10000, value=1000, step=500,
-                                 help="Ограничьте число строк для быстрой загрузки. 0 – загрузить все.")
+            max_rows = st.slider("Строк для предпросмотра (0 = все)", min_value=0, max_value=10000, value=1000, step=500, help="Ограничьте число строк для быстрой загрузки. 0 – загрузить все.")
             if uploaded:
                 with st.spinner("Чтение..."):
                     if uploaded.name.endswith('.csv'):
@@ -630,14 +537,11 @@ def render_tables_tab(api_key: str):
                 with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
                     table_manager.write_excel(st.session_state.current_df, tmp.name)
                     with open(tmp.name, 'rb') as f:
-                        st.download_button("📥 Excel", f, file_name=f"{st.session_state.editing_table_id}.xlsx",
-                                           key=f"dl_{st.session_state.editing_table_id}", width='stretch')
+                        st.download_button("📥 Excel", f, file_name=f"{st.session_state.editing_table_id}.xlsx", key=f"dl_{st.session_state.editing_table_id}", width='stretch')
             with c_ai:
                 if st.button("🤖 ИИ", key=f"ai_{st.session_state.editing_table_id}", width='stretch'):
                     st.session_state.table_edit_mode = True
-            edited = st.data_editor(st.session_state.current_df, num_rows="dynamic",
-                                    width='stretch', key=f"editor_{st.session_state.editing_table_id}",
-                                    hide_index=True)
+            edited = st.data_editor(st.session_state.current_df, num_rows="dynamic", width='stretch', key=f"editor_{st.session_state.editing_table_id}", hide_index=True)
             if not st.session_state.current_df.equals(edited):
                 st.session_state.current_df = edited
                 st.session_state.saved_tables[st.session_state.editing_table_id] = edited.copy()
@@ -645,8 +549,7 @@ def render_tables_tab(api_key: str):
                 st.toast("💾 Изменения сохранены")
             if st.session_state.table_edit_mode:
                 with st.expander("🤖 ИИ-помощник", expanded=True):
-                    instr = st.text_area("Опишите, что сделать:", placeholder="Пример: удали пустые строки, добавь столбец Итого",
-                                         height=80, key=f"ai_instr_{st.session_state.editing_table_id}")
+                    instr = st.text_area("Опишите, что сделать:", placeholder="Пример: удали пустые строки, добавь столбец Итого", height=80, key=f"ai_instr_{st.session_state.editing_table_id}")
                     if st.button("🚀 Применить ИИ", type="primary", key=f"ai_apply_{st.session_state.editing_table_id}"):
                         if instr and api_key:
                             with st.spinner("Анализ..."):
@@ -670,10 +573,7 @@ def render_tables_tab(api_key: str):
                                 else:
                                     st.error(f"❌ {result['error']}")
             st.markdown("#### Запись данных обратно в Google Sheets")
-            gsheet_write_url = st.text_input("URL Google Таблицы для записи",
-                                             value=st.session_state.get('last_gsheet_url', ''),
-                                             placeholder="https://docs.google.com/spreadsheets/d/...",
-                                             key="gsheet_write_url")
+            gsheet_write_url = st.text_input("URL Google Таблицы для записи", value=st.session_state.get('last_gsheet_url', ''), placeholder="https://docs.google.com/spreadsheets/d/...", key="gsheet_write_url")
             gsheet_sheet_name = st.text_input("Имя листа", value="Sheet1", key="gsheet_write_sheet")
             if st.button("📤 Записать в Google Sheets", width='stretch'):
                 if not gsheet_write_url:
@@ -699,14 +599,11 @@ def render_images_tab(api_key: str):
     if not image_manager:
         st.error("Менеджер изображений не инициализирован")
         return
-    tabs = st.tabs(["📥 Загрузка", "✏️ Ручное редактирование", "🤖 ИИ‑редактирование",
-                    "🎨 Массовая обработка", "🧠 Массовая ИИ‑обработка", "💾 Результаты", "📊 Статистика"])
-
+    tabs = st.tabs(["📥 Загрузка", "✏️ Ручное редактирование", "🤖 ИИ‑редактирование", "🎨 Массовая обработка", "🧠 Массовая ИИ‑обработка", "💾 Результаты", "📊 Статистика"])
     with tabs[0]:
         st.markdown("### 📥 Массовая загрузка изображений")
         st.info(f"До {CONFIG.MAX_IMAGE_UPLOAD} файлов, форматы: {', '.join(CONFIG.SUPPORTED_IMAGE_FORMATS)}")
-        uploaded_files = st.file_uploader("Выберите изображения", type=list(CONFIG.SUPPORTED_IMAGE_FORMATS),
-                                          accept_multiple_files=True, key="image_upload")
+        uploaded_files = st.file_uploader("Выберите изображения", type=list(CONFIG.SUPPORTED_IMAGE_FORMATS), accept_multiple_files=True, key="image_upload")
         if uploaded_files:
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -729,7 +626,6 @@ def render_images_tab(api_key: str):
                 for idx, (fn, img) in enumerate(list(st.session_state.uploaded_images.items())[:6]):
                     with cols[idx % 3]:
                         st.image(img, caption=f"{fn} ({img.size[0]}x{img.size[1]})", width='stretch')
-
     with tabs[1]:
         st.markdown("### ✏️ Ручное редактирование")
         if not st.session_state.uploaded_images:
@@ -742,13 +638,7 @@ def render_images_tab(api_key: str):
                 with col1:
                     st.image(original, width='stretch', caption="Оригинал")
                 with col2:
-                    op = st.selectbox("Операция", [e.value for e in ImageEditOperation],
-                                      format_func=lambda x: {
-                                          'remove_background': 'Удалить фон', 'remove_watermark': 'Удалить вод.знак',
-                                          'resize': 'Изменить размер', 'crop': 'Обрезать', 'rotate': 'Повернуть',
-                                          'enhance': 'Улучшить', 'filter': 'Фильтр', 'add_watermark': 'Водяной знак',
-                                          'convert_format': 'Формат'
-                                      }.get(x, x), key="manual_op")
+                    op = st.selectbox("Операция", [e.value for e in ImageEditOperation], format_func=lambda x: {'remove_background':'Удалить фон','remove_watermark':'Удалить вод.знак','resize':'Изменить размер','crop':'Обрезать','rotate':'Повернуть','enhance':'Улучшить','filter':'Фильтр','add_watermark':'Водяной знак','convert_format':'Формат'}.get(x,x), key="manual_op")
                     params = {}
                     if op == 'resize':
                         params['width'] = st.number_input("Ширина", value=original.size[0])
@@ -759,15 +649,14 @@ def render_images_tab(api_key: str):
                         params['contrast'] = st.slider("Контраст", 0.0, 2.0, 1.0)
                         params['sharpness'] = st.slider("Четкость", 0.0, 2.0, 1.0)
                     elif op == 'filter':
-                        params['filter_type'] = st.selectbox("Фильтр", ['blur', 'sharpen', 'edge_enhance', 'contour',
-                                                                         'emboss', 'smooth', 'detail'])
+                        params['filter_type'] = st.selectbox("Фильтр", ['blur','sharpen','edge_enhance','contour','emboss','smooth','detail'])
                     elif op == 'add_watermark':
                         params['text'] = st.text_input("Текст", "Watermark")
-                        params['position'] = st.selectbox("Позиция", ['top-left', 'top-right', 'bottom-left', 'bottom-right'])
+                        params['position'] = st.selectbox("Позиция", ['top-left','top-right','bottom-left','bottom-right'])
                         params['font_size'] = st.slider("Размер шрифта", 10, 100, 40)
                         params['opacity'] = st.slider("Прозрачность", 0, 255, 128)
                     elif op == 'convert_format':
-                        params['format'] = st.selectbox("Формат", ['PNG', 'JPEG', 'WEBP', 'BMP'])
+                        params['format'] = st.selectbox("Формат", ['PNG','JPEG','WEBP','BMP'])
                     if st.button("🚀 Применить", type="primary", key="manual_apply"):
                         try:
                             processed = image_manager._apply_operation(original, ImageEditOperation(op), params)
@@ -776,7 +665,6 @@ def render_images_tab(api_key: str):
                             st.image(processed, caption="Результат", width='stretch')
                         except Exception as e:
                             st.error(f"❌ {e}")
-
     with tabs[2]:
         st.markdown("### 🤖 ИИ‑редактирование (по описанию)")
         if not st.session_state.uploaded_images:
@@ -786,8 +674,7 @@ def render_images_tab(api_key: str):
             if selected_ai:
                 img = st.session_state.uploaded_images[selected_ai]
                 st.image(img, caption="Исходное изображение", width='stretch')
-                instruction = st.text_area("Что нужно сделать?", placeholder="Пример: удали фон, поверни на 45 градусов, сделай черно-белым и добавь водяной знак 'Фото'",
-                                           height=80, key="ai_instruction")
+                instruction = st.text_area("Что нужно сделать?", placeholder="Пример: удали фон, поверни на 45 градусов, сделай черно-белым и добавь водяной знак 'Фото'", height=80, key="ai_instruction")
                 if st.button("🤖 Обработать с ИИ", type="primary", width='stretch'):
                     if not instruction.strip():
                         st.warning("Введите инструкцию")
@@ -802,18 +689,13 @@ def render_images_tab(api_key: str):
                                 st.image(processed_ai, caption="Результат ИИ", width='stretch')
                             except Exception as e:
                                 st.error(f"❌ Ошибка ИИ‑редактирования: {e}")
-
     with tabs[3]:
         st.markdown("### 🎨 Массовая обработка (одинаковая операция)")
         if not st.session_state.uploaded_images:
             st.info("Сначала загрузите изображения")
         else:
             st.markdown(f"Доступно: {len(st.session_state.uploaded_images)}")
-            bop = st.selectbox("Операция для всех", [e.value for e in ImageEditOperation],
-                               format_func=lambda x: {
-                                   'remove_background': 'Удалить фон', 'remove_watermark': 'Удалить вод.знак',
-                                   'resize': 'Изменить размер', 'enhance': 'Улучшить', 'convert_format': 'Конвертировать'
-                               }.get(x, x), key="batch_operation")
+            bop = st.selectbox("Операция для всех", [e.value for e in ImageEditOperation], format_func=lambda x: {'remove_background':'Удалить фон','remove_watermark':'Удалить вод.знак','resize':'Изменить размер','enhance':'Улучшить','convert_format':'Конвертировать'}.get(x,x), key="batch_operation")
             bparams = {}
             if bop == 'resize':
                 bparams['width'] = st.number_input("Ширина", value=800)
@@ -823,34 +705,32 @@ def render_images_tab(api_key: str):
                 bparams['brightness'] = st.slider("Яркость", 0.0, 2.0, 1.0)
                 bparams['contrast'] = st.slider("Контраст", 0.0, 2.0, 1.0)
             elif bop == 'convert_format':
-                bparams['format'] = st.selectbox("Формат", ['PNG', 'JPEG', 'WEBP'])
+                bparams['format'] = st.selectbox("Формат", ['PNG','JPEG','WEBP'])
             if st.button("🚀 Обработать все", type="primary"):
                 progress = st.progress(0)
                 status = st.empty()
                 def update_progress(current, total, filename):
                     progress.progress(current / total)
                     status.text(f"{filename} ({current}/{total})")
-                results = image_manager.process_batch(list(st.session_state.uploaded_images.items()),
-                                                      ImageEditOperation(bop), bparams, update_progress)
+                results = image_manager.process_batch(list(st.session_state.uploaded_images.items()), ImageEditOperation(bop), bparams, update_progress)
                 for fn, img in results:
-                    if img: st.session_state.processed_images[f"batch_{fn}"] = img
+                    if img:
+                        st.session_state.processed_images[f"batch_{fn}"] = img
                 progress.empty()
                 status.empty()
                 st.success(f"Обработано {len(results)} изображений")
                 if st.button("💾 Сохранить все результаты"):
                     for fn, img in st.session_state.processed_images.items():
-                        if img: img.save(IMAGES_DIR / fn)
+                        if img:
+                            img.save(IMAGES_DIR / fn)
                     st.success(f"Сохранено в {IMAGES_DIR}")
-
     with tabs[4]:
         st.markdown("### 🧠 Массовая ИИ‑обработка (единая инструкция)")
         if not st.session_state.uploaded_images:
             st.info("Сначала загрузите изображения")
         else:
             st.markdown(f"Будет обработано **{len(st.session_state.uploaded_images)}** изображений")
-            instruction_mass = st.text_area("Единая инструкция для всех изображений",
-                                            placeholder="Пример: удали фон и добавь водяной знак 'Мой бренд'",
-                                            height=80, key="mass_ai_instruction")
+            instruction_mass = st.text_area("Единая инструкция для всех изображений", placeholder="Пример: удали фон и добавь водяной знак 'Мой бренд'", height=80, key="mass_ai_instruction")
             if st.button("🤖 Применить ко всем", type="primary", width='stretch'):
                 if not instruction_mass.strip():
                     st.warning("Введите инструкцию")
@@ -864,8 +744,7 @@ def render_images_tab(api_key: str):
                         status.text(f"ИИ‑обработка: {filename} ({current}/{total})")
                     images_list = list(st.session_state.uploaded_images.items())
                     try:
-                        results = image_manager.batch_ai_edit(images_list, instruction_mass,
-                                                              api_key=api_key, progress_callback=update_progress)
+                        results = image_manager.batch_ai_edit(images_list, instruction_mass, api_key=api_key, progress_callback=update_progress)
                         for fn, img in results:
                             if img:
                                 st.session_state.processed_images[f"mass_ai_{fn}"] = img
@@ -874,7 +753,6 @@ def render_images_tab(api_key: str):
                         st.success(f"Обработано {len(results)} изображений")
                     except Exception as e:
                         st.error(f"❌ Ошибка: {e}")
-
     with tabs[5]:
         st.markdown("### 💾 Сохранённые результаты")
         if not st.session_state.processed_images:
@@ -886,17 +764,22 @@ def render_images_tab(api_key: str):
                     st.image(img, caption=fn, width='stretch')
                     cs, cd, cx = st.columns(3)
                     with cs:
-                        if st.button("💾", key=f"save_res_{idx}"): img.save(IMAGES_DIR / fn); st.success("✅")
+                        if st.button("💾", key=f"save_res_{idx}"):
+                            img.save(IMAGES_DIR / fn)
+                            st.success("✅")
                     with cd:
-                        buf = BytesIO(); img.save(buf, format='PNG')
+                        buf = BytesIO()
+                        img.save(buf, format='PNG')
                         st.download_button("📥", buf, fn, "image/png", key=f"dl_res_{idx}")
                     with cx:
-                        if st.button("🗑️", key=f"del_res_{idx}"): del st.session_state.processed_images[fn]; st.rerun()
+                        if st.button("🗑️", key=f"del_res_{idx}"):
+                            del st.session_state.processed_images[fn]
+                            st.rerun()
             if st.button("💾 Сохранить все в папку", width='stretch'):
                 for fn, img in st.session_state.processed_images.items():
-                    if img: img.save(IMAGES_DIR / fn)
+                    if img:
+                        img.save(IMAGES_DIR / fn)
                 st.success(f"Сохранено в {IMAGES_DIR}")
-
     with tabs[6]:
         st.markdown("### 📊 Статистика")
         c1, c2, c3, c4 = st.columns(4)
@@ -918,30 +801,13 @@ def render_images_tab(api_key: str):
             st.plotly_chart(fig, width='stretch')
 
 
-# ====================== ЭКОНОМИКА (МАССОВАЯ ЮНИТ-ЭКОНОМИКА НА 150К+ ТОВАРОВ) ======================
+# ====================== ЭКОНОМИКА ======================
 def render_economy_tab(api_key: str):
     st.subheader("🧠 Экономика – Массовая юнит-экономика")
-    st.markdown("""
-    <div class="info-box">
-    <b>📊 Массовый расчёт юнит-экономики для тысяч товаров:</b><br>
-    1. Загрузите Excel/CSV с товарами (артикул, цена, себестоимость, вес, габариты)<br>
-    2. Все формулы возьмутся из образца Google Sheets<br>
-    3. Скачайте Excel с живыми формулами для <b>каждого товара</b><br>
-    4. При изменении цены или веса — всё пересчитывается автоматически!
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown("""<div class="info-box"><b>📊 Полный цикл:</b><br>1. Загрузите структуру из Google Sheets (образец)<br>2. Загрузите методику из Word или статьи<br>3. Загрузите Excel/CSV с товарами<br>4. Результат запишется в Google Sheets и скачается как Excel с живыми формулами</div>""", unsafe_allow_html=True)
     table_manager = st.session_state.table_manager
-
-    # Шаг 1: Загрузка образца таблицы
     st.markdown("### 📥 Шаг 1: Образец структуры")
-    gs_url = st.text_input(
-        "URL Google Таблицы с образцом",
-        value="https://docs.google.com/spreadsheets/d/1bVbdYtd_8mNcceqvih3Vi7nrpRSdDdFXK1TxPEQqXcc/edit?gid=741202153#gid=741202153",
-        key="econ_gs_url",
-        help="Образец юнит-экономики OZON"
-    )
-
+    gs_url = st.text_input("URL Google Таблицы с образцом", value="https://docs.google.com/spreadsheets/d/1bVbdYtd_8mNcceqvih3Vi7nrpRSdDdFXK1TxPEQqXcc/edit?gid=741202153#gid=741202153", key="econ_gs_url")
     if st.button("📊 Загрузить образец", width='stretch'):
         if gs_url:
             with st.spinner("Загружаю структуру..."):
@@ -950,286 +816,151 @@ def render_economy_tab(api_key: str):
                     st.session_state.econ_template = df
                     st.success(f"✅ Структура загружена: {df.shape[0]} строк, {df.shape[1]} столбцов")
                     st.rerun()
-
-    # Шаг 2: Загрузка файла с товарами
     st.markdown("---")
-    st.markdown("### 📦 Шаг 2: Загрузите файл с товарами")
-
-    st.info("""
-    **Формат файла (Excel или CSV):**
-    - **Артикул** (название товара)
-    - **Цена** (руб)
-    - **Себестоимость** (руб)
-    - **Вес** (кг)
-    - **Длина** (см)
-    - **Ширина** (см)
-    - **Высота** (см)
-    
-    Если каких-то колонок нет — они будут заполнены значениями по умолчанию.
-    """)
-
-    uploaded_file = st.file_uploader("Excel или CSV с товарами", type=['xlsx', 'xls', 'csv'], key="econ_mass_upload")
-
-    # Параметры по умолчанию (если в файле нет каких-то колонок)
-    with st.expander("⚙️ Значения по умолчанию (для отсутствующих колонок)"):
+    st.markdown("### 📄 Шаг 2: Методика расчёта")
+    source_method = st.radio("Источник методики", ["Word-документ", "Ссылка на статью"], key="econ_method_source")
+    if source_method == "Word-документ":
+        word_file = st.file_uploader("Word-документ (.docx)", type=['docx'], key="econ_word")
+        if word_file and DOCX_AVAILABLE:
+            try:
+                doc = docx.Document(word_file)
+                text = "\n".join([p.text for p in doc.paragraphs])
+                st.session_state.econ_method_text = text[:15000]
+                st.success(f"✅ Методика извлечена из Word ({len(text)} символов)")
+            except Exception as e:
+                st.error(f"❌ Ошибка чтения Word: {e}")
+        elif word_file and not DOCX_AVAILABLE:
+            st.warning("Установите python-docx: pip install python-docx")
+    else:
+        article_url = st.text_input("URL статьи", value="https://partner.market.yandex.ru/chtojournal/finance-on-marketplaces_yunit-ehkonomika-na-marketplejse/", key="econ_article_url")
+        if st.button("🔍 Извлечь методику", width='stretch'):
+            if article_url:
+                try:
+                    headers = {'User-Agent': 'Mozilla/5.0'}
+                    resp = requests.get(article_url, headers=headers, timeout=30)
+                    soup = BeautifulSoup(resp.text, 'lxml')
+                    for script in soup(["script", "style"]):
+                        script.decompose()
+                    text = soup.get_text(separator='\n')[:15000]
+                    st.session_state.econ_method_text = text
+                    st.success(f"✅ Методика извлечена из статьи ({len(text)} символов)")
+                except Exception as e:
+                    st.error(f"❌ Ошибка: {e}")
+    st.markdown("---")
+    st.markdown("### 📦 Шаг 3: Товары")
+    products_file = st.file_uploader("Excel/CSV с товарами", type=['xlsx', 'xls', 'csv'], key="econ_products")
+    with st.expander("⚙️ Значения по умолчанию"):
         col_def1, col_def2, col_def3 = st.columns(3)
         with col_def1:
-            default_price = st.number_input("Цена (руб)", value=2000, min_value=0, step=100, key="econ_def_price")
-            default_cost = st.number_input("Себестоимость (руб)", value=800, min_value=0, step=100, key="econ_def_cost")
+            default_price = st.number_input("Цена (руб)", value=2000, step=100, key="econ_def_price")
+            default_cost = st.number_input("Себестоимость (руб)", value=800, step=100, key="econ_def_cost")
         with col_def2:
-            default_weight = st.number_input("Вес (кг)", value=1.0, min_value=0.0, step=0.1, key="econ_def_weight")
+            default_weight = st.number_input("Вес (кг)", value=1.0, step=0.1, key="econ_def_weight")
         with col_def3:
-            default_length = st.number_input("Длина (см)", value=30, min_value=0, key="econ_def_length")
-            default_width = st.number_input("Ширина (см)", value=20, min_value=0, key="econ_def_width")
-            default_height = st.number_input("Высота (см)", value=10, min_value=0, key="econ_def_height")
-
-    # Шаг 3: Генерация Excel
+            default_length = st.number_input("Длина (см)", value=30, key="econ_def_length")
+            default_width = st.number_input("Ширина (см)", value=20, key="econ_def_width")
+            default_height = st.number_input("Высота (см)", value=10, key="econ_def_height")
     st.markdown("---")
-    st.markdown("### 🚀 Шаг 3: Создать юнит-экономику для всех товаров")
-
-    if uploaded_file and st.button("📊 Рассчитать юнит-экономику для всех товаров", type="primary", width='stretch'):
-        with st.spinner("Читаю файл и строю Excel с формулами..."):
+    st.markdown("### 📤 Шаг 4: Куда записать результат")
+    output_gs_url = st.text_input("URL Google Таблицы для записи результата", placeholder="https://docs.google.com/spreadsheets/d/...", key="econ_output_gs_url", help="Оставьте пустым, если не нужно записывать в Google Sheets")
+    output_sheet_name = st.text_input("Имя листа", value="Юнит-экономика", key="econ_output_sheet")
+    st.markdown("---")
+    if products_file and st.button("🚀 Рассчитать и записать", type="primary", width='stretch'):
+        with st.spinner("Обрабатываю товары и строю Excel..."):
             try:
-                # Читаем файл
-                if uploaded_file.name.endswith('.csv'):
-                    products_df = pd.read_csv(uploaded_file)
+                if products_file.name.endswith('.csv'):
+                    products_df = pd.read_csv(products_file)
                 else:
-                    products_df = table_manager.read_excel(uploaded_file)
-
+                    products_df = table_manager.read_excel(products_file)
                 if products_df is None or products_df.empty:
-                    st.error("❌ Не удалось прочитать файл или файл пуст.")
+                    st.error("❌ Файл пуст или не читается")
                     return
-
-                st.info(f"📦 Загружено товаров: **{len(products_df):,}**")
-
-                # Нормализуем названия колонок
+                st.info(f"📦 Товаров: **{len(products_df):,}**")
                 col_map = {}
                 for col in products_df.columns:
-                    col_lower = str(col).lower().strip()
-                    if any(word in col_lower for word in ['артикул', 'article', 'sku', 'название', 'name', 'товар']):
+                    cl = str(col).lower().strip()
+                    if any(w in cl for w in ['артикул','article','sku','название','name','товар']):
                         col_map['article'] = col
-                    elif any(word in col_lower for word in ['цена', 'price', 'стоимость']):
+                    elif any(w in cl for w in ['цена','price','стоимость']):
                         col_map['price'] = col
-                    elif any(word in col_lower for word in ['себестоимость', 'cost', 'закуп', 'себес']):
+                    elif any(w in cl for w in ['себестоимость','cost','закуп','себес']):
                         col_map['cost'] = col
-                    elif any(word in col_lower for word in ['вес', 'weight']):
+                    elif any(w in cl for w in ['вес','weight']):
                         col_map['weight'] = col
-                    elif any(word in col_lower for word in ['длина', 'length']):
+                    elif any(w in cl for w in ['длина','length']):
                         col_map['length'] = col
-                    elif any(word in col_lower for word in ['ширина', 'width']):
+                    elif any(w in cl for w in ['ширина','width']):
                         col_map['width'] = col
-                    elif any(word in col_lower for word in ['высота', 'height']):
+                    elif any(w in cl for w in ['высота','height']):
                         col_map['height'] = col
-
-                # Создаём Excel
                 output = BytesIO()
                 import openpyxl
                 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
                 from openpyxl.utils import get_column_letter
-
                 wb = openpyxl.Workbook()
                 ws = wb.active
                 ws.title = "Юнит-экономика"
-
-                # Стили
                 header_fill = PatternFill(start_color="667eea", end_color="764ba2", fill_type="solid")
                 header_font = Font(bold=True, color="FFFFFF", size=10)
                 result_fill = PatternFill(start_color="E8F5E9", end_color="C8E6C9", fill_type="solid")
                 input_fill = PatternFill(start_color="FFF9C4", end_color="FFF59D", fill_type="solid")
-                thin_border = Border(
-                    left=Side(style='thin'), right=Side(style='thin'),
-                    top=Side(style='thin'), bottom=Side(style='thin')
-                )
-
-                # Заголовки
-                main_headers = [
-                    "Артикул", "Цена (руб)", "Себестоимость (руб)", "Вес (кг)",
-                    "Объём (л)", "Комиссия (10%)", "Логистика", "Хранение",
-                    "Реклама", "Прочие расходы", "Налог УСН (6%)",
-                    "ИТОГО РАСХОДЫ", "МАРЖИНАЛЬНАЯ ПРИБЫЛЬ", "РЕНТАБЕЛЬНОСТЬ"
-                ]
-
+                thin_border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+                main_headers = ["Артикул", "Цена (руб)", "Себестоимость (руб)", "Вес (кг)", "Объём (л)", "Комиссия (10%)", "Логистика", "Хранение", "Реклама", "Прочие расходы", "Налог УСН (6%)", "ИТОГО РАСХОДЫ", "МАРЖИНАЛЬНАЯ ПРИБЫЛЬ", "РЕНТАБЕЛЬНОСТЬ"]
                 for col_idx, header in enumerate(main_headers, 1):
                     cell = ws.cell(row=1, column=col_idx, value=header)
                     cell.fill = header_fill
                     cell.font = header_font
                     cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                     cell.border = thin_border
-
-                # Заполняем данные для каждого товара
                 for i, (_, product) in enumerate(products_df.iterrows()):
-                    row = i + 2  # Начинаем со 2-й строки
-
-                    # Извлекаем данные
+                    row = i + 2
                     article = str(product.get(col_map.get('article', products_df.columns[0]), f"Товар {i+1}"))
-                    price_val = float(product.get(col_map.get('price'), default_price)) if pd.notna(product.get(col_map.get('price'), default_price)) else default_price
-                    cost_val = float(product.get(col_map.get('cost'), default_cost)) if pd.notna(product.get(col_map.get('cost'), default_cost)) else default_cost
-                    weight_val = float(product.get(col_map.get('weight'), default_weight)) if pd.notna(product.get(col_map.get('weight'), default_weight)) else default_weight
-                    length_val = float(product.get(col_map.get('length'), default_length)) if pd.notna(product.get(col_map.get('length'), default_length)) else default_length
-                    width_val = float(product.get(col_map.get('width'), default_width)) if pd.notna(product.get(col_map.get('width'), default_width)) else default_width
-                    height_val = float(product.get(col_map.get('height'), default_height)) if pd.notna(product.get(col_map.get('height'), default_height)) else default_height
+                    price_val = float(product.get(col_map.get('price'), default_price)) if pd.notna(product.get(col_map.get('price'))) else default_price
+                    cost_val = float(product.get(col_map.get('cost'), default_cost)) if pd.notna(product.get(col_map.get('cost'))) else default_cost
+                    weight_val = float(product.get(col_map.get('weight'), default_weight)) if pd.notna(product.get(col_map.get('weight'))) else default_weight
+                    length_val = float(product.get(col_map.get('length'), default_length)) if pd.notna(product.get(col_map.get('length'))) else default_length
+                    width_val = float(product.get(col_map.get('width'), default_width)) if pd.notna(product.get(col_map.get('width'))) else default_width
+                    height_val = float(product.get(col_map.get('height'), default_height)) if pd.notna(product.get(col_map.get('height'))) else default_height
                     volume_val = round(length_val * width_val * height_val / 1000, 2)
-
-                    # Артикул (A)
-                    cell_a = ws.cell(row=row, column=1, value=article)
-                    cell_a.border = thin_border
-                    cell_a.alignment = Alignment(vertical="center")
-
-                    # Цена (B) — ввод
-                    cell_b = ws.cell(row=row, column=2, value=price_val)
-                    cell_b.border = thin_border
-                    cell_b.number_format = '# ##0.00'
-                    cell_b.alignment = Alignment(horizontal="center")
-                    cell_b.fill = input_fill
-
-                    # Себестоимость (C) — ввод
-                    cell_c = ws.cell(row=row, column=3, value=cost_val)
-                    cell_c.border = thin_border
-                    cell_c.number_format = '# ##0.00'
-                    cell_c.alignment = Alignment(horizontal="center")
-                    cell_c.fill = input_fill
-
-                    # Вес (D) — ввод
-                    cell_d = ws.cell(row=row, column=4, value=weight_val)
-                    cell_d.border = thin_border
-                    cell_d.number_format = '0.00'
-                    cell_d.alignment = Alignment(horizontal="center")
-                    cell_d.fill = input_fill
-
-                    # Объём (E) — формула
-                    cell_e = ws.cell(row=row, column=5, value=volume_val)
-                    cell_e.border = thin_border
-                    cell_e.number_format = '0.00'
-                    cell_e.alignment = Alignment(horizontal="center")
-
-                    # Комиссия (F) — формула: Цена * 10%
-                    cell_f = ws.cell(row=row, column=6, value=f"=B{row}*0.10")
-                    cell_f.border = thin_border
-                    cell_f.number_format = '# ##0.00'
-                    cell_f.alignment = Alignment(horizontal="center")
-
-                    # Логистика (G) — формула от веса
-                    cell_g = ws.cell(row=row, column=7,
-                                     value=f"=IF(D{row}<=1,150,IF(D{row}<=5,200,IF(D{row}<=10,300,500)))")
-                    cell_g.border = thin_border
-                    cell_g.number_format = '# ##0.00'
-                    cell_g.alignment = Alignment(horizontal="center")
-
-                    # Хранение (H) — формула от объёма
-                    cell_h = ws.cell(row=row, column=8,
-                                     value=f"=IF(E{row}<=1,30,IF(E{row}<=5,50,IF(E{row}<=10,100,200)))")
-                    cell_h.border = thin_border
-                    cell_h.number_format = '# ##0.00'
-                    cell_h.alignment = Alignment(horizontal="center")
-
-                    # Реклама (I)
-                    cell_i = ws.cell(row=row, column=9, value=100)
-                    cell_i.border = thin_border
-                    cell_i.number_format = '# ##0.00'
-                    cell_i.alignment = Alignment(horizontal="center")
-
-                    # Прочие расходы (J)
-                    cell_j = ws.cell(row=row, column=10, value=50)
-                    cell_j.border = thin_border
-                    cell_j.number_format = '# ##0.00'
-                    cell_j.alignment = Alignment(horizontal="center")
-
-                    # Налог УСН (K) — формула: Цена * 6%
-                    cell_k = ws.cell(row=row, column=11, value=f"=B{row}*0.06")
-                    cell_k.border = thin_border
-                    cell_k.number_format = '# ##0.00'
-                    cell_k.alignment = Alignment(horizontal="center")
-
-                    # ИТОГО РАСХОДЫ (L) — формула: СУММ
-                    cell_l = ws.cell(row=row, column=12, value=f"=SUM(F{row}:K{row})")
-                    cell_l.border = thin_border
-                    cell_l.number_format = '# ##0.00'
-                    cell_l.font = Font(bold=True)
-                    cell_l.alignment = Alignment(horizontal="center")
-                    cell_l.fill = result_fill
-
-                    # МАРЖИНАЛЬНАЯ ПРИБЫЛЬ (M) — формула: Цена - Расходы
-                    cell_m = ws.cell(row=row, column=13, value=f"=B{row}-L{row}")
-                    cell_m.border = thin_border
-                    cell_m.number_format = '# ##0.00'
-                    cell_m.font = Font(bold=True)
-                    cell_m.alignment = Alignment(horizontal="center")
-                    cell_m.fill = result_fill
-
-                    # РЕНТАБЕЛЬНОСТЬ (N) — формула: Прибыль / Цена
-                    cell_n = ws.cell(row=row, column=14, value=f"=IF(B{row}>0,M{row}/B{row},0)")
-                    cell_n.border = thin_border
-                    cell_n.number_format = '0.00%'
-                    cell_n.font = Font(bold=True)
-                    cell_n.alignment = Alignment(horizontal="center")
-                    cell_n.fill = result_fill
-
-                # Ширина столбцов
-                col_widths = [20, 15, 18, 10, 10, 16, 14, 12, 12, 14, 16, 18, 22, 18]
-                for idx, width in enumerate(col_widths, 1):
+                    c = ws.cell(row=row, column=1, value=article); c.border = thin_border
+                    c = ws.cell(row=row, column=2, value=price_val); c.border = thin_border; c.number_format = '# ##0.00'; c.alignment = Alignment(horizontal="center"); c.fill = input_fill
+                    c = ws.cell(row=row, column=3, value=cost_val); c.border = thin_border; c.number_format = '# ##0.00'; c.alignment = Alignment(horizontal="center"); c.fill = input_fill
+                    c = ws.cell(row=row, column=4, value=weight_val); c.border = thin_border; c.number_format = '0.00'; c.alignment = Alignment(horizontal="center"); c.fill = input_fill
+                    c = ws.cell(row=row, column=5, value=volume_val); c.border = thin_border; c.number_format = '0.00'; c.alignment = Alignment(horizontal="center")
+                    c = ws.cell(row=row, column=6, value=f"=B{row}*0.10"); c.border = thin_border; c.number_format = '# ##0.00'; c.alignment = Alignment(horizontal="center")
+                    c = ws.cell(row=row, column=7, value=f"=IF(D{row}<=1,150,IF(D{row}<=5,200,IF(D{row}<=10,300,500)))"); c.border = thin_border; c.number_format = '# ##0.00'; c.alignment = Alignment(horizontal="center")
+                    c = ws.cell(row=row, column=8, value=f"=IF(E{row}<=1,30,IF(E{row}<=5,50,IF(E{row}<=10,100,200)))"); c.border = thin_border; c.number_format = '# ##0.00'; c.alignment = Alignment(horizontal="center")
+                    c = ws.cell(row=row, column=9, value=100); c.border = thin_border; c.number_format = '# ##0.00'; c.alignment = Alignment(horizontal="center")
+                    c = ws.cell(row=row, column=10, value=50); c.border = thin_border; c.number_format = '# ##0.00'; c.alignment = Alignment(horizontal="center")
+                    c = ws.cell(row=row, column=11, value=f"=B{row}*0.06"); c.border = thin_border; c.number_format = '# ##0.00'; c.alignment = Alignment(horizontal="center")
+                    c = ws.cell(row=row, column=12, value=f"=SUM(F{row}:K{row})"); c.border = thin_border; c.number_format = '# ##0.00'; c.font = Font(bold=True); c.alignment = Alignment(horizontal="center"); c.fill = result_fill
+                    c = ws.cell(row=row, column=13, value=f"=B{row}-L{row}"); c.border = thin_border; c.number_format = '# ##0.00'; c.font = Font(bold=True); c.alignment = Alignment(horizontal="center"); c.fill = result_fill
+                    c = ws.cell(row=row, column=14, value=f"=IF(B{row}>0,M{row}/B{row},0)"); c.border = thin_border; c.number_format = '0.00%'; c.font = Font(bold=True); c.alignment = Alignment(horizontal="center"); c.fill = result_fill
+                for idx, width in enumerate([20, 15, 18, 10, 10, 16, 14, 12, 12, 14, 16, 18, 22, 18], 1):
                     ws.column_dimensions[get_column_letter(idx)].width = width
-
-                # Фиксируем заголовок
                 ws.freeze_panes = 'A2'
-
-                # Автофильтр
                 ws.auto_filter.ref = f"A1:N{len(products_df) + 1}"
-
-                # Сохраняем
                 wb.save(output)
                 output.seek(0)
-
-                # Результат
-                st.success(f"✅ Юнит-экономика рассчитана для **{len(products_df):,}** товаров!")
-
-                # Статистика
-                total_revenue = products_df[col_map.get('price', products_df.columns[1])].sum() if col_map.get('price') else 0
-                st.metric("Общая выручка (ориентировочно)", f"{total_revenue:,.0f} руб")
-
-                # Скачивание
-                st.download_button(
-                    label=f"📥 Скачать Excel с формулами ({len(products_df):,} товаров)",
-                    data=output.getvalue(),
-                    file_name=f"unit_economy_{len(products_df)}_products.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    width='stretch'
-                )
-
-                st.info("""
-                **💡 Как использовать Excel:**
-                1. Откройте скачанный файл в Excel или Google Sheets
-                2. Измените **Цену** (столбец B), **Себестоимость** (C) или **Вес** (D) — все формулы пересчитаются автоматически!
-                3. Жёлтые ячейки — для ввода данных, зелёные — результаты
-                4. Можно фильтровать и сортировать по любому столбцу
-                5. Добавляйте новые товары внизу — формулы скопируются автоматически (в Excel)
-                """)
-
-                # Предпросмотр первых 10 товаров
-                st.markdown("### 👁️ Предпросмотр (первые 10 товаров)")
-                preview_data = []
-                for i, (_, product) in enumerate(products_df.head(10).iterrows()):
-                    article = str(product.get(col_map.get('article', products_df.columns[0]), f"Товар {i+1}"))
-                    price_val = float(product.get(col_map.get('price'), default_price)) if pd.notna(product.get(col_map.get('price'), default_price)) else default_price
-                    cost_val = float(product.get(col_map.get('cost'), default_cost)) if pd.notna(product.get(col_map.get('cost'), default_cost)) else default_cost
-                    weight_val = float(product.get(col_map.get('weight'), default_weight)) if pd.notna(product.get(col_map.get('weight'), default_weight)) else default_weight
-                    length_val = float(product.get(col_map.get('length'), default_length)) if pd.notna(product.get(col_map.get('length'), default_length)) else default_length
-                    width_val = float(product.get(col_map.get('width'), default_width)) if pd.notna(product.get(col_map.get('width'), default_width)) else default_width
-                    height_val = float(product.get(col_map.get('height'), default_height)) if pd.notna(product.get(col_map.get('height'), default_height)) else default_height
-                    volume_val = round(length_val * width_val * height_val / 1000, 2)
-                    commission = round(price_val * 0.10, 2)
-                    logistics = 150 if weight_val <= 1 else (200 if weight_val <= 5 else (300 if weight_val <= 10 else 500))
-                    storage = 30 if volume_val <= 1 else (50 if volume_val <= 5 else (100 if volume_val <= 10 else 200))
-                    total_expenses = commission + logistics + storage + 100 + 50 + round(price_val * 0.06, 2)
-                    profit = price_val - total_expenses
-                    roi = (profit / price_val * 100) if price_val > 0 else 0
-                    preview_data.append({
-                        "Артикул": article,
-                        "Цена": f"{price_val:,.0f}",
-                        "Прибыль": f"{profit:,.0f}",
-                        "Рент.": f"{roi:.1f}%"
-                    })
-                preview_df = pd.DataFrame(preview_data)
-                st.dataframe(preview_df, width='stretch')
-
+                st.download_button(label=f"📥 Скачать Excel ({len(products_df):,} товаров)", data=output.getvalue(), file_name=f"unit_economy_{len(products_df)}_products.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", width='stretch')
+                if output_gs_url:
+                    try:
+                        table_manager.write_google_sheets(products_df, output_gs_url, output_sheet_name)
+                        st.success(f"✅ Данные записаны в Google Sheets: {output_sheet_name}")
+                    except PermissionError as pe:
+                        st.error(f"🔒 {pe}")
+                    except Exception as e:
+                        st.error(f"❌ Ошибка записи в Google Sheets: {e}")
+                st.success(f"✅ Готово! Обработано {len(products_df):,} товаров")
             except Exception as e:
-                st.error(f"❌ Ошибка при обработке файла: {str(e)}")
+                st.error(f"❌ Ошибка: {str(e)}")
+
+
+def render_help_tab():
+    st.markdown("""
+    ## 🚀 Быстрый старт
+    1. Получите API ключ на platform.deepseek.com
+    2. Вставьте его в боковую панель
+    3. Выберите или создайте агента
+    4. Начните диалог или постройте workflow
+    """)
