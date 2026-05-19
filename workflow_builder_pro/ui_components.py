@@ -2,6 +2,7 @@
 UI-функции для рендеринга вкладок приложения.
 Добавлены расширенные настройки подключения для Email, Telegram, HTTP.
 Улучшена работа с таблицами: быстрый предпросмотр, сохранение в Google Sheets.
+Добавлена вкладка "Экономика" – построение юнит-экономики по ссылке на статью.
 """
 import streamlit as st
 import pandas as pd
@@ -11,6 +12,8 @@ from PIL import Image
 from io import BytesIO
 import tempfile
 import shutil
+import re
+import requests
 from config import CONFIG, IMAGES_DIR
 from utils import (
     save_tables_auto, save_messages_auto, save_workflow_auto,
@@ -22,8 +25,16 @@ from workflow import WorkflowExecutor, AIWorkflowGenerator
 from ai_agent import AgentManager
 from table_manager import TableManager
 from image_manager import ImageManager
+from openai import OpenAI
+
+try:
+    from bs4 import BeautifulSoup
+    BS_AVAILABLE = True
+except ImportError:
+    BS_AVAILABLE = False
 
 
+# ====================== ОБЩИЕ ВКЛАДКИ (без изменений) ======================
 def render_chat_tab(agent_manager: AgentManager, api_key: str):
     current = agent_manager.get_current_agent()
     if not current:
@@ -648,7 +659,7 @@ def render_tables_tab(api_key: str):
                                                 st.error(f"❌ {e}")
                                 else:
                                     st.error(f"❌ {result['error']}")
-            # --- Новые кнопки: запись в Google Sheets ---
+            # Запись в Google Sheets
             st.markdown("#### Запись данных обратно в Google Sheets")
             gsheet_write_url = st.text_input("URL Google Таблицы для записи",
                                              value=st.session_state.get('last_gsheet_url', ''),
@@ -896,6 +907,102 @@ def render_images_tab(api_key: str):
             df_fmt = pd.DataFrame({'Формат': list(fmt_counts.keys()), 'Количество': list(fmt_counts.values())})
             fig = px.pie(df_fmt, values='Количество', names='Формат', title="По форматам")
             st.plotly_chart(fig, use_container_width=True)
+
+
+# ====================== НОВАЯ ВКЛАДКА "ЭКОНОМИКА" ======================
+def render_economy_tab(api_key: str):
+    st.subheader("🧠 Экономика – построение модели по статье")
+    st.markdown("Вставьте ссылку на статью с описанием методики (юнит‑экономика, финансовая модель и т.п.), и ИИ создаст готовую таблицу с расчётами.")
+
+    url = st.text_input("Ссылка на статью", placeholder="https://partner.market.yandex.ru/chtojournal/...")
+    if st.button("📊 Сгенерировать модель", type="primary", use_container_width=True):
+        if not url:
+            st.warning("Введите ссылку")
+        elif not api_key:
+            st.error("Введите API-ключ DeepSeek в боковой панели")
+        else:
+            with st.spinner("Читаю страницу и анализирую методику..."):
+                try:
+                    # 1. Загружаем HTML
+                    headers = {'User-Agent': 'Mozilla/5.0'}
+                    resp = requests.get(url, headers=headers, timeout=30)
+                    resp.raise_for_status()
+                    soup = BeautifulSoup(resp.text, 'lxml')
+                    # Удаляем скрипты и стили
+                    for script in soup(["script", "style"]):
+                        script.decompose()
+                    text = soup.get_text(separator='\n')
+                    # Ограничим объём текста (первые 15000 символов)
+                    text = text[:15000]
+                    if not text.strip():
+                        st.error("Не удалось извлечь текст страницы.")
+                        return
+                    # 2. Отправляем ИИ
+                    client = OpenAI(api_key=api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
+                    prompt = f"""
+Ты эксперт по финансовому моделированию и юнит‑экономике.
+На основе приведённого ниже текста статьи выдели ключевые показатели и формулы.
+Создай Python‑код с использованием pandas, который строит таблицу юнит‑экономики.
+Код должен:
+- Создать DataFrame с названиями показателей (строками) и их значениями для примера.
+- Добавить столбцы "Формула" (текст формулы) и "Результат" (рассчитанное значение).
+- В конце вывести итоговые показатели (прибыль с единицы, маржинальность и т.д.).
+- Код должен быть безопасным и выполняться в песочнице.
+Верни ТОЛЬКО код на Python, без пояснений, в блоке ```python.
+
+Текст статьи:
+{text}
+"""
+                    response = client.chat.completions.create(
+                        model=CONFIG.DEEPSEEK_MODEL,
+                        messages=[{"role": "system", "content": "Ты финансовый аналитик. Возвращай только код Python."},
+                                  {"role": "user", "content": prompt}],
+                        temperature=0.2,
+                        timeout=CONFIG.API_TIMEOUT,
+                        max_tokens=CONFIG.MAX_TOKENS
+                    )
+                    code = response.choices[0].message.content
+                    # Извлекаем код из ответа
+                    if "```python" in code:
+                        code = code.split("```python", 1)[1].split("```", 1)[0]
+                    elif "```" in code:
+                        code = code.split("```", 1)[1].split("```", 1)[0]
+                    code = code.strip()
+                    if not code.startswith("import") and not code.startswith("from") and not code.startswith("df"):
+                        st.error("Не удалось получить корректный код от ИИ.")
+                        st.code(code, language='python')
+                        return
+                    # 3. Выполняем код в песочнице
+                    local_vars = {}
+                    exec(code, {"pd": pd, "np": __import__('numpy')}, local_vars)
+                    df = local_vars.get('df')
+                    if df is None:
+                        # Попробуем найти любой DataFrame
+                        for var in local_vars.values():
+                            if isinstance(var, pd.DataFrame):
+                                df = var
+                                break
+                    if df is None:
+                        st.error("Код не создал DataFrame.")
+                        st.code(code, language='python')
+                        return
+                    # 4. Показываем результат
+                    st.success("✅ Модель построена!")
+                    st.dataframe(df, use_container_width=True)
+                    # Кнопка скачать Excel
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        df.to_excel(writer, index=False, sheet_name='Юнит-экономика')
+                    st.download_button(
+                        label="📥 Скачать Excel",
+                        data=output.getvalue(),
+                        file_name="unit_economy.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                    st.markdown("### 📐 Сгенерированный код")
+                    st.code(code, language='python')
+                except Exception as e:
+                    st.error(f"❌ Ошибка: {e}")
 
 
 def render_help_tab():
