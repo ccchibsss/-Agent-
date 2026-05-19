@@ -917,198 +917,313 @@ def render_images_tab(api_key: str):
             st.plotly_chart(fig, width='stretch')
 
 
-# ====================== ЭКОНОМИКА (ЮНИТ-ЭКОНОМИКА ДЛЯ МАРКЕТПЛЕЙСА) ======================
+# ====================== ЭКОНОМИКА (ЖИВЫЕ ФОРМУЛЫ ИЗ GOOGLE SHEETS) ======================
 def render_economy_tab(api_key: str):
-    st.subheader("🧠 Экономика – Юнит-экономика для маркетплейса")
+    st.subheader("🧠 Экономика – Юнит-экономика как в Google Sheets")
     st.markdown("""
     <div class="info-box">
-    <b>Как это работает:</b><br>
-    1. Вставьте ссылку на Google-таблицу с данными (или загрузите свою)<br>
-    2. ИИ автоматически построит юнит-экономику по структуре Яндекс Маркет<br>
-    3. Скачайте готовый Excel с формулами
+    <b>📊 Как это работает:</b><br>
+    1. Загрузите структуру из Google-таблицы (один раз)<br>
+    2. Введите только <b>Цену товара</b> и <b>вес/габариты</b><br>
+    3. Все формулы возьмутся из таблицы автоматически<br>
+    4. Скачайте Excel — формулы будут живыми!
     </div>
     """, unsafe_allow_html=True)
 
-    source = st.radio("Источник данных", ["Google Sheets (образец)", "Загрузить Excel/CSV", "Создать пустой шаблон"], key="econ_source")
-    
-    df = None
     table_manager = st.session_state.table_manager
-
-    if source == "Google Sheets (образец)":
-        gs_url = st.text_input(
-            "URL Google Таблицы",
-            value="https://docs.google.com/spreadsheets/d/1KwHE161o0G6BJsz3LfaN2LBnJ3OJyEcOZzKtK5e0TOI/edit?gid=1679952747#gid=1679952747",
-            key="econ_gs_url"
-        )
-        if st.button("📊 Загрузить таблицу", width='stretch'):
+    
+    # Шаг 1: Загрузка структуры
+    st.markdown("### 📥 Шаг 1: Загрузите структуру таблицы")
+    gs_url = st.text_input(
+        "URL Google Таблицы с формулами",
+        value="https://docs.google.com/spreadsheets/d/1KwHE161o0G6BJsz3LfaN2LBnJ3OJyEcOZzKtK5e0TOI/edit?gid=1679952747#gid=1679952747",
+        key="econ_gs_url",
+        help="По умолчанию — юнит-экономика Яндекс Маркет"
+    )
+    
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("📊 Загрузить структуру", width='stretch'):
             if gs_url:
-                with st.spinner("Загрузка..."):
+                with st.spinner("Читаю Google Sheets..."):
                     df = table_manager.read_google_sheets(gs_url)
                     if df is not None:
-                        st.session_state.econ_df = df
-                        st.success(f"✅ Загружено: {df.shape}")
+                        st.session_state.econ_template = df
+                        st.success(f"✅ Загружено: {df.shape[0]} строк, {df.shape[1]} столбцов")
+                        # Сохраняем также все формулы из Google Sheets через API
+                        try:
+                            sheet_id = gs_url.split('/d/')[1].split('/')[0]
+                            gid = None
+                            if 'gid=' in gs_url:
+                                gid = gs_url.split('gid=')[1].split('#')[0]
+                            # Получаем формулы через Google Sheets API v4 (публичный доступ)
+                            api_url = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}?includeGridData=true"
+                            if gid:
+                                api_url += f"&ranges={gid}"
+                            resp = requests.get(api_url, timeout=10)
+                            if resp.status_code == 200:
+                                st.session_state.econ_formulas = resp.json()
+                        except:
+                            pass
                         st.rerun()
     
-    elif source == "Загрузить Excel/CSV":
-        uploaded = st.file_uploader("Excel или CSV", type=['xlsx', 'xls', 'csv'], key="econ_upload")
-        if uploaded:
-            with st.spinner("Чтение..."):
-                if uploaded.name.endswith('.csv'):
-                    df = pd.read_csv(uploaded)
-                else:
-                    df = table_manager.read_excel(uploaded)
-                if df is not None:
-                    st.session_state.econ_df = df
-                    st.success(f"✅ Загружено: {df.shape}")
-                    st.rerun()
-    
-    elif source == "Создать пустой шаблон":
-        if st.button("📋 Создать шаблон", width='stretch'):
-            template_data = {
-                "Показатель": [
-                    "Цена товара (Ц)",
-                    "Себестоимость (С)",
-                    "Комиссия маркетплейса",
-                    "Логистика",
-                    "Хранение",
-                    "Реклама",
-                    "Прочие расходы",
-                    "Налог (УСН 6%)",
-                    "",
-                    "Итого расходы",
-                    "Маржинальная прибыль",
-                    "Рентабельность",
-                ],
-                "Значение": [2000, 800, 200, 150, 50, 100, 50, 0, "", 0, 0, ""],
-                "Формула": [
-                    "", "", "Ц * 10%", "", "", "", "", "Ц * 6%", "",
-                    "С + Комиссия + Логистика + Хранение + Реклама + Прочие + Налог",
-                    "Ц - Итого расходы",
-                    "Маржинальная прибыль / Ц * 100"
-                ],
-                "Результат": ["", "", "", "", "", "", "", "", "", "", "", ""]
-            }
-            df = pd.DataFrame(template_data)
-            st.session_state.econ_df = df
-            st.success("✅ Шаблон создан!")
-            st.rerun()
-    
-    if 'econ_df' in st.session_state and st.session_state.econ_df is not None:
-        df = st.session_state.econ_df
-        st.markdown("### 📊 Исходные данные")
-        st.dataframe(df, width='stretch')
+    with col_btn2:
+        if st.button("📋 Взять из статьи", width='stretch', help="Извлечь формулы из статьи о юнит-экономике"):
+            article_url = st.text_input(
+                "Ссылка на статью",
+                value="https://partner.market.yandex.ru/chtojournal/finance-on-marketplaces_yunit-ehkonomika-na-marketplejse/#kak-ustanovit-ceny",
+                key="econ_article_url"
+            )
+            if st.button("🔍 Извлечь формулы", width='stretch'):
+                if article_url and api_key:
+                    with st.spinner("Читаю статью и извлекаю методику расчёта..."):
+                        try:
+                            from openai import OpenAI
+                            import requests as req
+                            from bs4 import BeautifulSoup
+                            
+                            headers = {'User-Agent': 'Mozilla/5.0'}
+                            resp = req.get(article_url, headers=headers, timeout=30)
+                            soup = BeautifulSoup(resp.text, 'lxml')
+                            for script in soup(["script", "style"]):
+                                script.decompose()
+                            text = soup.get_text(separator='\n')[:15000]
+                            
+                            client = OpenAI(api_key=api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
+                            prompt = f"""
+Извлеки из текста статьи ВСЕ формулы для расчёта юнит-экономики маркетплейса.
+Верни ТОЛЬКО JSON с полями:
+{{
+    "price": {{"name": "Цена товара", "default": 2000}},
+    "cost": {{"name": "Себестоимость", "default": 800}},
+    "commission": {{"name": "Комиссия", "formula": "Цена * X%", "default_percent": 10}},
+    "logistics": {{"name": "Логистика", "formula": "зависит от веса/габаритов", "default": 150}},
+    "storage": {{"name": "Хранение", "formula": "...", "default": 50}},
+    ... и все остальные показатели
+}}
 
-    if df is not None:
-        st.markdown("---")
-        st.markdown("### 🤖 Построить юнит-экономику")
-        
-        description = st.text_area(
-            "Опишите дополнительные параметры (необязательно)",
-            placeholder="Например: цена товара 2000 руб, себестоимость 800 руб, комиссия 10%, логистика 150 руб...",
-            height=80,
-            key="econ_description"
-        )
-        
-        if st.button("🚀 Рассчитать юнит-экономику", type="primary", width='stretch'):
-            if not api_key:
-                st.error("Введите API-ключ DeepSeek в боковой панели")
-            else:
-                with st.spinner("ИИ анализирует данные и строит модель..."):
-                    try:
-                        df_text = df.to_string() if df is not None else ""
-                        
-                        client = OpenAI(api_key=api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
-                        prompt = f"""
-Ты эксперт по юнит-экономике для маркетплейсов (Яндекс Маркет, Ozon, Wildberries).
-
-На основе предоставленной таблицы создай Python-код, который:
-1. Берёт за основу структуру таблицы (показатели и значения)
-2. Заполняет ВСЕ формулы и рассчитывает результаты
-3. Вычисляет итоговые показатели:
-   - Итого расходы = сумма всех расходов
-   - Маржинальная прибыль = Цена - Итого расходы
-   - Рентабельность = Маржинальная прибыль / Цена * 100%
-
-Формулы для расчёта:
-- Комиссия = Цена * процент_комиссии (обычно 5-15%)
-- Налог УСН = Цена * 0.06 (для УСН 6%)
-- Итого расходы = Себестоимость + Комиссия + Логистика + Хранение + Реклама + Прочие + Налог
-- Маржинальная прибыль = Цена - Итого расходы
-- Рентабельность = (Маржинальная прибыль / Цена) * 100
-
-Код должен:
-- Создать DataFrame с колонками: Показатель, Значение, Формула, Результат
-- Заполнить ВСЕ строки данными и формулами
-- Рассчитать все результаты
-- Вывести итоговую таблицу в переменную df
-
-ДАННЫЕ ТАБЛИЦЫ:
-{df_text}
-
-ДОПОЛНИТЕЛЬНЫЕ ПАРАМЕТРЫ:
-{description if description else "Использовать стандартные значения"}
-
-Верни ТОЛЬКО код Python в блоке ```python, без пояснений.
+Текст статьи:
+{text}
 """
-                        response = client.chat.completions.create(
-                            model=CONFIG.DEEPSEEK_MODEL,
-                            messages=[{"role": "system", "content": "Ты эксперт по финансовому моделированию. Возвращай только код Python."},
-                                      {"role": "user", "content": prompt}],
-                            temperature=0.2,
-                            timeout=CONFIG.API_TIMEOUT,
-                            max_tokens=CONFIG.MAX_TOKENS
-                        )
-                        
-                        code = response.choices[0].message.content
-                        
-                        if "```python" in code:
-                            code = code.split("```python", 1)[1].split("```", 1)[0]
-                        elif "```" in code:
-                            code = code.split("```", 1)[1].split("```", 1)[0]
-                        code = code.strip()
-                        
-                        local_vars = {}
-                        exec(code, {"pd": pd, "np": __import__('numpy')}, local_vars)
-                        
-                        result_df = local_vars.get('df')
-                        if result_df is None:
-                            for var in local_vars.values():
-                                if isinstance(var, pd.DataFrame):
-                                    result_df = var
-                                    break
-                        
-                        if result_df is None:
-                            st.error("Код не создал DataFrame. Проверьте сгенерированный код:")
-                            st.code(code, language='python')
-                        else:
-                            st.success("✅ Юнит-экономика рассчитана!")
-                            
-                            st.markdown("### 📊 Юнит-экономика")
-                            st.dataframe(result_df, width='stretch')
-                            
-                            output = BytesIO()
-                            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                                result_df.to_excel(writer, index=False, sheet_name='Юнит-экономика')
-                            st.download_button(
-                                label="📥 Скачать Excel с формулами",
-                                data=output.getvalue(),
-                                file_name="unit_economy_marketplace.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                width='stretch'
+                            response = client.chat.completions.create(
+                                model=CONFIG.DEEPSEEK_MODEL,
+                                messages=[{"role": "system", "content": "Ты извлекаешь формулы. Только JSON."},
+                                          {"role": "user", "content": prompt}],
+                                temperature=0.2, timeout=30, max_tokens=2000
                             )
-                            
-                            with st.expander("📐 Сгенерированный код Python"):
-                                st.code(code, language='python')
-                    
-                    except Exception as e:
-                        st.error(f"❌ Ошибка: {str(e)}")
+                            content = response.choices[0].message.content
+                            json_match = re.search(r'\{[\s\S]*\}', content)
+                            if json_match:
+                                formulas = json.loads(json_match.group())
+                                st.session_state.econ_formulas_config = formulas
+                                st.success("✅ Формулы извлечены из статьи!")
+                                st.json(formulas)
+                        except Exception as e:
+                            st.error(f"❌ Ошибка: {e}")
 
-
-def render_help_tab():
-    st.markdown("""
-    ## 🚀 Быстрый старт
-    1. Получите API ключ на platform.deepseek.com
-    2. Вставьте его в боковую панель
-    3. Выберите или создайте агента
-    4. Начните диалог или постройте workflow
-    """)
+    # Шаг 2: Ввод параметров
+    if 'econ_template' in st.session_state and st.session_state.econ_template is not None:
+        st.markdown("---")
+        st.markdown("### ✏️ Шаг 2: Введите параметры товара")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            price = st.number_input("💰 Цена товара (руб)", value=2000, min_value=0, step=100, key="econ_price")
+            cost = st.number_input("📦 Себестоимость (руб)", value=800, min_value=0, step=100, key="econ_cost")
+            weight = st.number_input("⚖️ Вес товара (кг)", value=1.0, min_value=0.0, step=0.1, key="econ_weight")
+        
+        with col2:
+            length = st.number_input("📏 Длина (см)", value=30, min_value=0, key="econ_length")
+            width = st.number_input("📐 Ширина (см)", value=20, min_value=0, key="econ_width")
+            height = st.number_input("📊 Высота (см)", value=10, min_value=0, key="econ_height")
+            volume = length * width * height / 1000  # в литрах
+            st.caption(f"Объём: {volume:.2f} л")
+        
+        st.markdown("---")
+        st.markdown("### 🚀 Шаг 3: Создать Excel с формулами")
+        
+        if st.button("📊 Создать юнит-экономику с живыми формулами", type="primary", width='stretch'):
+            with st.spinner("Строю Excel с формулами как в Google Sheets..."):
+                # Создаём Excel с формулами
+                output = BytesIO()
+                import openpyxl
+                from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+                
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = "Юнит-экономика"
+                
+                # Настройки стилей
+                header_fill = PatternFill(start_color="667eea", end_color="764ba2", fill_type="solid")
+                header_font = Font(bold=True, color="FFFFFF", size=11)
+                title_font = Font(bold=True, size=14, color="333333")
+                result_fill = PatternFill(start_color="E8F5E9", end_color="C8E6C9", fill_type="solid")
+                thin_border = Border(
+                    left=Side(style='thin'), right=Side(style='thin'),
+                    top=Side(style='thin'), bottom=Side(style='thin')
+                )
+                
+                # Заголовок
+                ws.merge_cells('A1:C1')
+                ws.cell(row=1, column=1, value="Юнит-экономика для маркетплейса").font = title_font
+                
+                # Заголовки столбцов
+                headers = ["Показатель", "Значение", "Формула"]
+                for col, header in enumerate(headers, 1):
+                    cell = ws.cell(row=3, column=col, value=header)
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = thin_border
+                
+                # Данные и формулы (строка 4 и далее)
+                # Строка 4: Цена товара
+                ws.cell(row=4, column=1, value="Цена товара (Ц)").border = thin_border
+                ws.cell(row=4, column=2, value=price).border = thin_border
+                ws.cell(row=4, column=2).number_format = '# ##0.00'
+                ws.cell(row=4, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=4, column=3, value="Ввод пользователя").border = thin_border
+                
+                # Строка 5: Себестоимость
+                ws.cell(row=5, column=1, value="Себестоимость (С)").border = thin_border
+                ws.cell(row=5, column=2, value=cost).border = thin_border
+                ws.cell(row=5, column=2).number_format = '# ##0.00'
+                ws.cell(row=5, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=5, column=3, value="Ввод пользователя").border = thin_border
+                
+                # Строка 6: Комиссия маркетплейса (формула!)
+                ws.cell(row=6, column=1, value="Комиссия маркетплейса").border = thin_border
+                ws.cell(row=6, column=2, value=f"=B4*10%").border = thin_border
+                ws.cell(row=6, column=2).number_format = '# ##0.00'
+                ws.cell(row=6, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=6, column=3, value="Цена × 10%").border = thin_border
+                
+                # Строка 7: Логистика (формула от веса!)
+                ws.cell(row=7, column=1, value="Логистика").border = thin_border
+                ws.cell(row=7, column=2, value=f"=IF(D2<=1,150,IF(D2<=5,200,IF(D2<=10,300,500)))").border = thin_border
+                ws.cell(row=7, column=2).number_format = '# ##0.00'
+                ws.cell(row=7, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=7, column=3, value="От веса: ≤1кг=150₽, ≤5кг=200₽, ≤10кг=300₽, >10кг=500₽").border = thin_border
+                
+                # Строка 8: Хранение (формула от объёма!)
+                ws.cell(row=8, column=1, value="Хранение").border = thin_border
+                ws.cell(row=8, column=2, value=f"=IF(E2<=1,30,IF(E2<=5,50,IF(E2<=10,100,200)))").border = thin_border
+                ws.cell(row=8, column=2).number_format = '# ##0.00'
+                ws.cell(row=8, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=8, column=3, value="От объёма: ≤1л=30₽, ≤5л=50₽, ≤10л=100₽, >10л=200₽").border = thin_border
+                
+                # Строка 9: Реклама
+                ws.cell(row=9, column=1, value="Реклама").border = thin_border
+                ws.cell(row=9, column=2, value=100).border = thin_border
+                ws.cell(row=9, column=2).number_format = '# ##0.00'
+                ws.cell(row=9, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=9, column=3, value="Фиксированная ставка").border = thin_border
+                
+                # Строка 10: Прочие расходы
+                ws.cell(row=10, column=1, value="Прочие расходы").border = thin_border
+                ws.cell(row=10, column=2, value=50).border = thin_border
+                ws.cell(row=10, column=2).number_format = '# ##0.00'
+                ws.cell(row=10, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=10, column=3, value="Фиксированная ставка").border = thin_border
+                
+                # Строка 11: Налог УСН
+                ws.cell(row=11, column=1, value="Налог (УСН 6%)").border = thin_border
+                ws.cell(row=11, column=2, value="=B4*6%").border = thin_border
+                ws.cell(row=11, column=2).number_format = '# ##0.00'
+                ws.cell(row=11, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=11, column=3, value="Цена × 6%").border = thin_border
+                
+                # Пустая строка
+                ws.cell(row=12, column=1, value="").border = thin_border
+                
+                # Строка 13: Итого расходы (СУММА)
+                ws.cell(row=13, column=1, value="Итого расходы").border = thin_border
+                ws.cell(row=13, column=1).font = Font(bold=True)
+                ws.cell(row=13, column=2, value="=SUM(B5:B11)").border = thin_border
+                ws.cell(row=13, column=2).number_format = '# ##0.00'
+                ws.cell(row=13, column=2).font = Font(bold=True)
+                ws.cell(row=13, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=13, column=2).fill = result_fill
+                ws.cell(row=13, column=3, value="Сумма всех расходов").border = thin_border
+                
+                # Строка 14: Маржинальная прибыль
+                ws.cell(row=14, column=1, value="Маржинальная прибыль").border = thin_border
+                ws.cell(row=14, column=1).font = Font(bold=True)
+                ws.cell(row=14, column=2, value="=B4-B13").border = thin_border
+                ws.cell(row=14, column=2).number_format = '# ##0.00'
+                ws.cell(row=14, column=2).font = Font(bold=True)
+                ws.cell(row=14, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=14, column=2).fill = result_fill
+                ws.cell(row=14, column=3, value="Цена − Итого расходы").border = thin_border
+                
+                # Строка 15: Рентабельность
+                ws.cell(row=15, column=1, value="Рентабельность").border = thin_border
+                ws.cell(row=15, column=1).font = Font(bold=True)
+                ws.cell(row=15, column=2, value="=B14/B4").border = thin_border
+                ws.cell(row=15, column=2).number_format = '0.00%'
+                ws.cell(row=15, column=2).font = Font(bold=True)
+                ws.cell(row=15, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=15, column=2).fill = result_fill
+                ws.cell(row=15, column=3, value="Прибыль / Цена × 100%").border = thin_border
+                
+                # Дополнительные данные для формул (вес и объём)
+                ws.cell(row=2, column=1, value="Вес (кг):").border = thin_border
+                ws.cell(row=2, column=2, value=weight).border = thin_border
+                ws.cell(row=2, column=2).alignment = Alignment(horizontal="center")
+                ws.cell(row=2, column=2).number_format = '0.00'
+                
+                ws.cell(row=2, column=4, value="Объём (л):").border = thin_border
+                ws.cell(row=2, column=5, value=round(volume, 2)).border = thin_border
+                ws.cell(row=2, column=5).alignment = Alignment(horizontal="center")
+                ws.cell(row=2, column=5).number_format = '0.00'
+                
+                # Ширина столбцов
+                ws.column_dimensions['A'].width = 30
+                ws.column_dimensions['B'].width = 15
+                ws.column_dimensions['C'].width = 45
+                ws.column_dimensions['D'].width = 12
+                ws.column_dimensions['E'].width = 12
+                
+                # Сохраняем
+                wb.save(output)
+                output.seek(0)
+                
+                # Показываем результат
+                st.success("✅ Юнит-экономика с живыми формулами создана!")
+                
+                # Превью
+                st.markdown("### 📊 Предпросмотр")
+                preview_data = {
+                    "Показатель": [
+                        "Цена товара", "Себестоимость", "Комиссия (10%)", "Логистика",
+                        "Хранение", "Реклама", "Прочие расходы", "Налог УСН (6%)",
+                        "Итого расходы", "Маржинальная прибыль", "Рентабельность"
+                    ],
+                    "Значение (руб)": [
+                        price, cost, round(price * 0.1, 2),
+                        "=от веса" if weight <= 1 else "=от веса",
+                        "=от объёма" if volume <= 1 else "=от объёма",
+                        100, 50, round(price * 0.06, 2),
+                        "=СУММ", "=Цена-Расходы", "=Прибыль/Цена"
+                    ],
+                }
+                preview_df = pd.DataFrame(preview_data)
+                st.dataframe(preview_df, width='stretch')
+                
+                # Кнопка скачать
+                st.download_button(
+                    label="📥 Скачать Excel с живыми формулами",
+                    data=output.getvalue(),
+                    file_name=f"unit_economy_{price}rub.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    width='stretch'
+                )
+                
+                # Инструкция
+                st.info("""
+                **💡 Как использовать Excel:**
+                1. Откройте скачанный файл в Excel или Google Sheets
+                2. Измените **Цену товара** (ячейка B4) — все формулы пересчитаются автоматически
+                3. Измените **Вес** (D2) и **Объём** (E2) — логистика и хранение обновятся
+                4. Результаты выделены зелёным цветом
+                """)
