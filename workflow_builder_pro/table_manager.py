@@ -1,6 +1,9 @@
 """
 Менеджер для работы с таблицами (Google Sheets, Excel).
-Поддерживает .xlsx, .xlsm, .xls (через xlrd).
+Поддерживает .xlsx, .xlsm, .xls (через xlrd), .csv.
+Добавлены:
+- max_rows для быстрой предзагрузки Excel
+- запись в Google Sheets через gspread
 """
 import streamlit as st
 import pandas as pd
@@ -32,6 +35,14 @@ try:
 except ImportError:
     XLRD_SUPPORT = False
     xlrd = None
+
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    GSHEETS_WRITE_SUPPORT = True
+except ImportError:
+    GSHEETS_WRITE_SUPPORT = False
+    gspread = None
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +85,9 @@ class TableManager:
 
     @handle_errors(default_return=None)
     def read_excel(self, file_path: Union[str, BytesIO], sheet_name: Optional[Union[str, int]] = 0,
-                   range_a1: Optional[str] = None, use_cache: bool = True) -> Optional[pd.DataFrame]:
+                   range_a1: Optional[str] = None, use_cache: bool = True,
+                   max_rows: Optional[int] = None) -> Optional[pd.DataFrame]:
+        """Читает Excel, можно ограничить число строк для ускорения предпросмотра."""
         if not EXCEL_SUPPORT:
             raise ImportError("Установите openpyxl: pip install openpyxl")
 
@@ -85,20 +98,25 @@ class TableManager:
             name = getattr(file_path, 'name', '')
             ext = os.path.splitext(name)[1].lower() if name else ''
 
+        # Параметры для pd.read_excel
+        kwargs = {'sheet_name': sheet_name}
+        if range_a1:
+            kwargs['usecols'] = range_a1
+        if max_rows is not None:
+            kwargs['nrows'] = max_rows
+
         try:
-            df = pd.read_excel(file_path, sheet_name=sheet_name, engine='openpyxl',
-                               **({'usecols': range_a1} if range_a1 else {}))
+            df = pd.read_excel(file_path, engine='openpyxl', **kwargs)
         except Exception as e:
             if XLRD_SUPPORT and ext == '.xls':
                 logger.info("Попытка чтения .xls через xlrd")
-                df = pd.read_excel(file_path, sheet_name=sheet_name, engine='xlrd',
-                                   **({'usecols': range_a1} if range_a1 else {}))
+                df = pd.read_excel(file_path, engine='xlrd', **kwargs)
             else:
                 logger.error(f"Ошибка чтения Excel: {e}")
                 return None
 
         if use_cache:
-            cache_key = f"excel:{hash(str(file_path))}:{sheet_name}"
+            cache_key = f"excel:{hash(str(file_path))}:{sheet_name}:{max_rows}"
             self._cache[cache_key] = df.copy()
         self._last_operation = {
             'type': 'read', 'source': 'excel', 'rows': len(df),
@@ -227,4 +245,48 @@ class TableManager:
             return safe_globals.get('df', df)
         except Exception as e:
             logger.error(f"Ошибка выполнения: {e}")
+            raise
+
+    def write_google_sheets(self, df: pd.DataFrame, url: str, sheet_name: str = 'Sheet1',
+                            mode: str = 'overwrite') -> bool:
+        """
+        Записывает DataFrame в Google Sheets.
+        Требует настроенных секретов Streamlit: GSPREAD_CREDENTIALS (словарь ключей сервисного аккаунта).
+        mode: 'overwrite' - замена всего листа, 'append' - добавление в конец (пока не реализовано).
+        """
+        if not GSHEETS_WRITE_SUPPORT:
+            raise ImportError("Установите gspread: pip install gspread")
+
+        creds_dict = None
+        # Пробуем загрузить из secrets
+        try:
+            creds_dict = st.secrets["GSPREAD_CREDENTIALS"]
+            if isinstance(creds_dict, str):
+                creds_dict = json.loads(creds_dict)
+        except KeyError:
+            pass
+
+        if not creds_dict:
+            raise PermissionError("Не настроены GSPREAD_CREDENTIALS в секретах приложения.")
+
+        try:
+            credentials = Credentials.from_service_account_info(creds_dict)
+            client = gspread.authorize(credentials)
+            # Извлекаем ID таблицы из URL
+            sheet_id = url.split('/d/')[1].split('/')[0] if '/d/' in url else url
+            spreadsheet = client.open_by_key(sheet_id)
+            try:
+                worksheet = spreadsheet.worksheet(sheet_name)
+            except gspread.WorksheetNotFound:
+                worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="20")
+
+            # Очищаем лист и вставляем данные
+            worksheet.clear()
+            # Подготавливаем список списков
+            data = [df.columns.tolist()] + df.values.tolist()
+            worksheet.update(data)
+            logger.info(f"Данные успешно записаны в Google Sheets: {sheet_name}")
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка записи в Google Sheets: {e}")
             raise
