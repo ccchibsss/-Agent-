@@ -1,6 +1,3 @@
-"""
-Вспомогательные утилиты, декораторы, перечисления и dataclass'ы.
-"""
 import streamlit as st
 import json
 import time
@@ -8,7 +5,6 @@ import logging
 from typing import Dict, List, Tuple, Any, Optional, Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from PIL import Image
 from pathlib import Path
 from io import BytesIO
 import base64
@@ -26,9 +22,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# АВТОСОХРАНЕНИЕ
-# ============================================================================
 def save_workflow_auto(workflow: List[Dict]):
     try:
         with open(WORKFLOW_FILE, 'w', encoding='utf-8') as f:
@@ -154,9 +147,6 @@ def load_images_metadata_auto() -> Dict:
     return {}
 
 
-# ============================================================================
-# DECORATORS И УТИЛИТЫ
-# ============================================================================
 def cache_result(ttl_seconds: int = CONFIG.CACHE_TTL_SECONDS):
     def decorator(func: Callable):
         cache: Dict[str, Tuple[Any, float]] = {}
@@ -195,20 +185,19 @@ def format_bytes(size: int) -> str:
     return f"{size:.1f} TB"
 
 
-def image_to_base64(image: Image.Image) -> str:
+def image_to_base64(image) -> str:
+    from PIL import Image
     buffered = BytesIO()
     image.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode()
 
 
-def base64_to_image(base64_string: str) -> Image.Image:
+def base64_to_image(base64_string: str):
+    from PIL import Image
     image_data = base64.b64decode(base64_string)
     return Image.open(BytesIO(image_data))
 
 
-# ============================================================================
-# ENUMS ДЛЯ ТИПИЗАЦИИ
-# ============================================================================
 class NodeType(Enum):
     GOOGLE_SHEETS_READ = "google_sheets_read"
     GOOGLE_SHEETS_WRITE = "google_sheets_write"
@@ -273,9 +262,6 @@ class ImageEditOperation(Enum):
     CONVERT_FORMAT = "convert_format"
 
 
-# ============================================================================
-# DATA CLASSES ДЛЯ ТАБЛИЦ
-# ============================================================================
 @dataclass
 class TableCell:
     row: int
@@ -308,7 +294,7 @@ class TableRange:
     sheet_name: str
     start_row: int
     end_row: int
-    start_col: Any  # Union[int, str]
+    start_col: Any
     end_col: Any
     
     @property
