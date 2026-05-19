@@ -918,306 +918,318 @@ def render_images_tab(api_key: str):
             st.plotly_chart(fig, width='stretch')
 
 
-# ====================== ЭКОНОМИКА (ЮНИТ-ЭКОНОМИКА С ФОРМУЛАМИ EXCEL) ======================
+# ====================== ЭКОНОМИКА (МАССОВАЯ ЮНИТ-ЭКОНОМИКА НА 150К+ ТОВАРОВ) ======================
 def render_economy_tab(api_key: str):
-    st.subheader("🧠 Экономика – Юнит-экономика с живыми формулами")
+    st.subheader("🧠 Экономика – Массовая юнит-экономика")
     st.markdown("""
     <div class="info-box">
-    <b>📊 Как это работает:</b><br>
-    1. Загрузите структуру из Google-таблицы с образцом<br>
-    2. Введите <b>Цену товара</b>, <b>Себестоимость</b> и <b>вес/габариты</b><br>
-    3. ИИ прочитает статью по ссылке и извлечёт формулы расчётов<br>
-    4. Скачайте Excel — все формулы будут живыми!
+    <b>📊 Массовый расчёт юнит-экономики для тысяч товаров:</b><br>
+    1. Загрузите Excel/CSV с товарами (артикул, цена, себестоимость, вес, габариты)<br>
+    2. Все формулы возьмутся из образца Google Sheets<br>
+    3. Скачайте Excel с живыми формулами для <b>каждого товара</b><br>
+    4. При изменении цены или веса — всё пересчитывается автоматически!
     </div>
     """, unsafe_allow_html=True)
 
     table_manager = st.session_state.table_manager
 
     # Шаг 1: Загрузка образца таблицы
-    st.markdown("### 📥 Шаг 1: Образец таблицы")
-    col_url1, col_url2 = st.columns(2)
-    with col_url1:
-        gs_url = st.text_input(
-            "URL Google Таблицы (структура)",
-            value="https://docs.google.com/spreadsheets/d/1bVbdYtd_8mNcceqvih3Vi7nrpRSdDdFXK1TxPEQqXcc/edit?gid=741202153#gid=741202153",
-            key="econ_gs_url",
-            help="Образец юнит-экономики OZON"
-        )
-    with col_url2:
-        article_url = st.text_input(
-            "URL статьи с методикой расчёта",
-            value="https://partner.market.yandex.ru/chtojournal/finance-on-marketplaces_yunit-ehkonomika-na-marketplejse/#kak-ustanovit-ceny",
-            key="econ_article_url",
-            help="Статья о юнит-экономике на маркетплейсе"
-        )
+    st.markdown("### 📥 Шаг 1: Образец структуры")
+    gs_url = st.text_input(
+        "URL Google Таблицы с образцом",
+        value="https://docs.google.com/spreadsheets/d/1bVbdYtd_8mNcceqvih3Vi7nrpRSdDdFXK1TxPEQqXcc/edit?gid=741202153#gid=741202153",
+        key="econ_gs_url",
+        help="Образец юнит-экономики OZON"
+    )
 
-    if st.button("📊 Загрузить образец и извлечь формулы", width='stretch'):
+    if st.button("📊 Загрузить образец", width='stretch'):
         if gs_url:
-            with st.spinner("Загружаю структуру таблицы..."):
+            with st.spinner("Загружаю структуру..."):
                 df = table_manager.read_google_sheets(gs_url)
                 if df is not None:
                     st.session_state.econ_template = df
                     st.success(f"✅ Структура загружена: {df.shape[0]} строк, {df.shape[1]} столбцов")
+                    st.rerun()
 
-        if article_url and api_key:
-            with st.spinner("Читаю статью и извлекаю формулы..."):
-                try:
-                    headers = {'User-Agent': 'Mozilla/5.0'}
-                    resp = requests.get(article_url, headers=headers, timeout=30)
-                    soup = BeautifulSoup(resp.text, 'lxml')
-                    for script in soup(["script", "style"]):
-                        script.decompose()
-                    text = soup.get_text(separator='\n')[:15000]
-
-                    client = OpenAI(api_key=api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
-                    prompt = f"""
-Ты эксперт по юнит-экономике для маркетплейсов (OZON, Wildberries, Яндекс Маркет).
-
-Извлеки из текста статьи ВСЕ формулы для расчёта юнит-экономики.
-Верни ТОЛЬКО JSON с полями:
-{{
-    "commission_formula": "формула расчёта комиссии (обычно процент от цены)",
-    "logistics_formula": "формула расчёта логистики (зависит от веса/габаритов)",
-    "storage_formula": "формула расчёта хранения",
-    "tax_formula": "формула налога (УСН или НДС)",
-    "other_expenses": ["список прочих расходов с формулами"],
-    "total_expenses_formula": "формула итоговых расходов",
-    "profit_formula": "формула маржинальной прибыли",
-    "roi_formula": "формула рентабельности"
-}}
-
-Текст статьи:
-{text}
-"""
-                    response = client.chat.completions.create(
-                        model=CONFIG.DEEPSEEK_MODEL,
-                        messages=[{"role": "system", "content": "Ты извлекаешь формулы. Только JSON."},
-                                  {"role": "user", "content": prompt}],
-                        temperature=0.2, timeout=30, max_tokens=2000
-                    )
-                    content = response.choices[0].message.content
-                    json_match = re.search(r'\{[\s\S]*\}', content)
-                    if json_match:
-                        formulas = json.loads(json_match.group())
-                        st.session_state.econ_formulas = formulas
-                        st.success("✅ Формулы извлечены из статьи!")
-                except Exception as e:
-                    st.warning(f"⚠️ Не удалось извлечь формулы из статьи: {e}. Будут использованы стандартные формулы.")
-
-    # Шаг 2: Параметры товара
+    # Шаг 2: Загрузка файла с товарами
     st.markdown("---")
-    st.markdown("### ✏️ Шаг 2: Параметры товара")
+    st.markdown("### 📦 Шаг 2: Загрузите файл с товарами")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        price = st.number_input("💰 Цена товара (руб)", value=2000, min_value=0, step=100, key="econ_price")
-        cost = st.number_input("📦 Себестоимость (руб)", value=800, min_value=0, step=100, key="econ_cost")
-        weight = st.number_input("⚖️ Вес товара (кг)", value=1.0, min_value=0.0, step=0.1, key="econ_weight")
-
-    with col2:
-        length = st.number_input("📏 Длина (см)", value=30, min_value=0, key="econ_length")
-        width = st.number_input("📐 Ширина (см)", value=20, min_value=0, key="econ_width")
-        height = st.number_input("📊 Высота (см)", value=10, min_value=0, key="econ_height")
-        volume = length * width * height / 1000
-        st.caption(f"Объём: {volume:.2f} л")
-
-    # Шаг 3: Создание Excel
-    st.markdown("---")
-    st.markdown("### 🚀 Шаг 3: Создать Excel с формулами")
-
-    if st.button("📊 Создать юнит-экономику с живыми формулами", type="primary", width='stretch'):
-        with st.spinner("Строю Excel с формулами..."):
-            output = BytesIO()
-            import openpyxl
-            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "Юнит-экономика OZON"
-
-            header_fill = PatternFill(start_color="667eea", end_color="764ba2", fill_type="solid")
-            header_font = Font(bold=True, color="FFFFFF", size=11)
-            title_font = Font(bold=True, size=14, color="333333")
-            result_fill = PatternFill(start_color="E8F5E9", end_color="C8E6C9", fill_type="solid")
-            input_fill = PatternFill(start_color="FFF9C4", end_color="FFF59D", fill_type="solid")
-            thin_border = Border(
-                left=Side(style='thin'), right=Side(style='thin'),
-                top=Side(style='thin'), bottom=Side(style='thin')
-            )
-
-            # Заголовок
-            ws.merge_cells('A1:C1')
-            ws.cell(row=1, column=1, value="Юнит-экономика для маркетплейса").font = title_font
-
-            # Дополнительные данные
-            ws.cell(row=2, column=1, value="Вес (кг):").border = thin_border
-            ws.cell(row=2, column=2, value=weight).border = thin_border
-            ws.cell(row=2, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=2, column=2).number_format = '0.00'
-            ws.cell(row=2, column=2).fill = input_fill
-
-            ws.cell(row=2, column=4, value="Объём (л):").border = thin_border
-            ws.cell(row=2, column=5, value=round(volume, 2)).border = thin_border
-            ws.cell(row=2, column=5).alignment = Alignment(horizontal="center")
-            ws.cell(row=2, column=5).number_format = '0.00'
-            ws.cell(row=2, column=5).fill = input_fill
-
-            # Заголовки таблицы
-            headers = ["Показатель", "Значение (руб)", "Формула / Примечание"]
-            for col, header in enumerate(headers, 1):
-                cell = ws.cell(row=4, column=col, value=header)
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-                cell.border = thin_border
-
-            row = 5
-
-            # Доход
-            ws.cell(row=row, column=1, value="Цена товара (Ц)").border = thin_border
-            ws.cell(row=row, column=1).font = Font(bold=True)
-            ws.cell(row=row, column=2, value=price).border = thin_border
-            ws.cell(row=row, column=2).number_format = '# ##0.00'
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=2).fill = input_fill
-            ws.cell(row=row, column=3, value="Ввод пользователя").border = thin_border
-            row += 1
-
-            # Себестоимость
-            ws.cell(row=row, column=1, value="Себестоимость (С)").border = thin_border
-            ws.cell(row=row, column=1).font = Font(bold=True)
-            ws.cell(row=row, column=2, value=cost).border = thin_border
-            ws.cell(row=row, column=2).number_format = '# ##0.00'
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=2).fill = input_fill
-            ws.cell(row=row, column=3, value="Ввод пользователя").border = thin_border
-            row += 1
-
-            # Расходы
-            ws.cell(row=row, column=1, value="Комиссия маркетплейса").border = thin_border
-            ws.cell(row=row, column=2, value="=B5*0.10").border = thin_border
-            ws.cell(row=row, column=2).number_format = '# ##0.00'
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=3, value="Цена × 10%").border = thin_border
-            row += 1
-
-            ws.cell(row=row, column=1, value="Логистика").border = thin_border
-            ws.cell(row=row, column=2, value="=IF(B2<=1,150,IF(B2<=5,200,IF(B2<=10,300,500)))").border = thin_border
-            ws.cell(row=row, column=2).number_format = '# ##0.00'
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=3, value="До 1кг=150₽, 1-5кг=200₽, 5-10кг=300₽, >10кг=500₽").border = thin_border
-            row += 1
-
-            ws.cell(row=row, column=1, value="Хранение").border = thin_border
-            ws.cell(row=row, column=2, value="=IF(E2<=1,30,IF(E2<=5,50,IF(E2<=10,100,200)))").border = thin_border
-            ws.cell(row=row, column=2).number_format = '# ##0.00'
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=3, value="До 1л=30₽, 1-5л=50₽, 5-10л=100₽, >10л=200₽").border = thin_border
-            row += 1
-
-            ws.cell(row=row, column=1, value="Реклама и маркетинг").border = thin_border
-            ws.cell(row=row, column=2, value=100).border = thin_border
-            ws.cell(row=row, column=2).number_format = '# ##0.00'
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=3, value="Фиксированная ставка").border = thin_border
-            row += 1
-
-            ws.cell(row=row, column=1, value="Прочие расходы").border = thin_border
-            ws.cell(row=row, column=2, value=50).border = thin_border
-            ws.cell(row=row, column=2).number_format = '# ##0.00'
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=3, value="Фиксированная ставка").border = thin_border
-            row += 1
-
-            ws.cell(row=row, column=1, value="Налог (УСН 6%)").border = thin_border
-            ws.cell(row=row, column=2, value="=B5*0.06").border = thin_border
-            ws.cell(row=row, column=2).number_format = '# ##0.00'
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=3, value="Цена × 6%").border = thin_border
-            row += 2
-
-            # Итого
-            ws.cell(row=row, column=1, value="ИТОГО РАСХОДЫ").border = thin_border
-            ws.cell(row=row, column=1).font = Font(bold=True, size=12)
-            ws.cell(row=row, column=2, value="=SUM(B7:B12)").border = thin_border
-            ws.cell(row=row, column=2).number_format = '# ##0.00'
-            ws.cell(row=row, column=2).font = Font(bold=True, size=12)
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=2).fill = result_fill
-            ws.cell(row=row, column=3, value="Сумма всех расходов").border = thin_border
-            row += 1
-
-            ws.cell(row=row, column=1, value="МАРЖИНАЛЬНАЯ ПРИБЫЛЬ").border = thin_border
-            ws.cell(row=row, column=1).font = Font(bold=True, size=12)
-            ws.cell(row=row, column=2, value="=B5-B14").border = thin_border
-            ws.cell(row=row, column=2).number_format = '# ##0.00'
-            ws.cell(row=row, column=2).font = Font(bold=True, size=12)
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=2).fill = result_fill
-            ws.cell(row=row, column=3, value="Цена − Итого расходы").border = thin_border
-            row += 1
-
-            ws.cell(row=row, column=1, value="РЕНТАБЕЛЬНОСТЬ").border = thin_border
-            ws.cell(row=row, column=1).font = Font(bold=True, size=12)
-            ws.cell(row=row, column=2, value="=B15/B5").border = thin_border
-            ws.cell(row=row, column=2).number_format = '0.00%'
-            ws.cell(row=row, column=2).font = Font(bold=True, size=12)
-            ws.cell(row=row, column=2).alignment = Alignment(horizontal="center")
-            ws.cell(row=row, column=2).fill = result_fill
-            ws.cell(row=row, column=3, value="Прибыль / Цена × 100%").border = thin_border
-
-            # Ширина столбцов
-            ws.column_dimensions['A'].width = 28
-            ws.column_dimensions['B'].width = 18
-            ws.column_dimensions['C'].width = 50
-            ws.column_dimensions['D'].width = 12
-            ws.column_dimensions['E'].width = 12
-
-            wb.save(output)
-            output.seek(0)
-
-            st.success("✅ Юнит-экономика с живыми формулами создана!")
-
-            # Предпросмотр
-            st.markdown("### 📊 Предпросмотр")
-            preview_data = {
-                "Показатель": [
-                    "Цена товара", "Себестоимость", "Комиссия (10%)", "Логистика",
-                    "Хранение", "Реклама", "Прочие расходы", "Налог УСН (6%)",
-                    "ИТОГО РАСХОДЫ", "МАРЖИНАЛЬНАЯ ПРИБЫЛЬ", "РЕНТАБЕЛЬНОСТЬ"
-                ],
-                "Значение (руб)": [
-                    f"{price:,.2f}", f"{cost:,.2f}", f"{price * 0.1:,.2f}",
-                    "=формула от веса", "=формула от объёма",
-                    "100.00", "50.00", f"{price * 0.06:,.2f}",
-                    "=СУММ(расходов)", "=Цена-Расходы", "=Прибыль/Цена"
-                ],
-            }
-            preview_df = pd.DataFrame(preview_data)
-            st.dataframe(preview_df, width='stretch')
-
-            st.download_button(
-                label="📥 Скачать Excel с живыми формулами",
-                data=output.getvalue(),
-                file_name=f"unit_economy_{price}rub.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width='stretch'
-            )
-
-            st.info("""
-            **💡 Как использовать Excel:**
-            1. Откройте скачанный файл в Excel или Google Sheets
-            2. Измените **Цену товара** (ячейка B5) — все формулы пересчитаются автоматически
-            3. Измените **Вес** (B2) и **Объём** (E2) — логистика и хранение обновятся
-            4. Жёлтые ячейки — для ввода данных, зелёные — результаты
-            """)
-
-
-def render_help_tab():
-    st.markdown("""
-    ## 🚀 Быстрый старт
-    1. Получите API ключ на platform.deepseek.com
-    2. Вставьте его в боковую панель
-    3. Выберите или создайте агента
-    4. Начните диалог или постройте workflow
+    st.info("""
+    **Формат файла (Excel или CSV):**
+    - **Артикул** (название товара)
+    - **Цена** (руб)
+    - **Себестоимость** (руб)
+    - **Вес** (кг)
+    - **Длина** (см)
+    - **Ширина** (см)
+    - **Высота** (см)
+    
+    Если каких-то колонок нет — они будут заполнены значениями по умолчанию.
     """)
+
+    uploaded_file = st.file_uploader("Excel или CSV с товарами", type=['xlsx', 'xls', 'csv'], key="econ_mass_upload")
+
+    # Параметры по умолчанию (если в файле нет каких-то колонок)
+    with st.expander("⚙️ Значения по умолчанию (для отсутствующих колонок)"):
+        col_def1, col_def2, col_def3 = st.columns(3)
+        with col_def1:
+            default_price = st.number_input("Цена (руб)", value=2000, min_value=0, step=100, key="econ_def_price")
+            default_cost = st.number_input("Себестоимость (руб)", value=800, min_value=0, step=100, key="econ_def_cost")
+        with col_def2:
+            default_weight = st.number_input("Вес (кг)", value=1.0, min_value=0.0, step=0.1, key="econ_def_weight")
+        with col_def3:
+            default_length = st.number_input("Длина (см)", value=30, min_value=0, key="econ_def_length")
+            default_width = st.number_input("Ширина (см)", value=20, min_value=0, key="econ_def_width")
+            default_height = st.number_input("Высота (см)", value=10, min_value=0, key="econ_def_height")
+
+    # Шаг 3: Генерация Excel
+    st.markdown("---")
+    st.markdown("### 🚀 Шаг 3: Создать юнит-экономику для всех товаров")
+
+    if uploaded_file and st.button("📊 Рассчитать юнит-экономику для всех товаров", type="primary", width='stretch'):
+        with st.spinner("Читаю файл и строю Excel с формулами..."):
+            try:
+                # Читаем файл
+                if uploaded_file.name.endswith('.csv'):
+                    products_df = pd.read_csv(uploaded_file)
+                else:
+                    products_df = table_manager.read_excel(uploaded_file)
+
+                if products_df is None or products_df.empty:
+                    st.error("❌ Не удалось прочитать файл или файл пуст.")
+                    return
+
+                st.info(f"📦 Загружено товаров: **{len(products_df):,}**")
+
+                # Нормализуем названия колонок
+                col_map = {}
+                for col in products_df.columns:
+                    col_lower = str(col).lower().strip()
+                    if any(word in col_lower for word in ['артикул', 'article', 'sku', 'название', 'name', 'товар']):
+                        col_map['article'] = col
+                    elif any(word in col_lower for word in ['цена', 'price', 'стоимость']):
+                        col_map['price'] = col
+                    elif any(word in col_lower for word in ['себестоимость', 'cost', 'закуп', 'себес']):
+                        col_map['cost'] = col
+                    elif any(word in col_lower for word in ['вес', 'weight']):
+                        col_map['weight'] = col
+                    elif any(word in col_lower for word in ['длина', 'length']):
+                        col_map['length'] = col
+                    elif any(word in col_lower for word in ['ширина', 'width']):
+                        col_map['width'] = col
+                    elif any(word in col_lower for word in ['высота', 'height']):
+                        col_map['height'] = col
+
+                # Создаём Excel
+                output = BytesIO()
+                import openpyxl
+                from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+                from openpyxl.utils import get_column_letter
+
+                wb = openpyxl.Workbook()
+                ws = wb.active
+                ws.title = "Юнит-экономика"
+
+                # Стили
+                header_fill = PatternFill(start_color="667eea", end_color="764ba2", fill_type="solid")
+                header_font = Font(bold=True, color="FFFFFF", size=10)
+                result_fill = PatternFill(start_color="E8F5E9", end_color="C8E6C9", fill_type="solid")
+                input_fill = PatternFill(start_color="FFF9C4", end_color="FFF59D", fill_type="solid")
+                thin_border = Border(
+                    left=Side(style='thin'), right=Side(style='thin'),
+                    top=Side(style='thin'), bottom=Side(style='thin')
+                )
+
+                # Заголовки
+                main_headers = [
+                    "Артикул", "Цена (руб)", "Себестоимость (руб)", "Вес (кг)",
+                    "Объём (л)", "Комиссия (10%)", "Логистика", "Хранение",
+                    "Реклама", "Прочие расходы", "Налог УСН (6%)",
+                    "ИТОГО РАСХОДЫ", "МАРЖИНАЛЬНАЯ ПРИБЫЛЬ", "РЕНТАБЕЛЬНОСТЬ"
+                ]
+
+                for col_idx, header in enumerate(main_headers, 1):
+                    cell = ws.cell(row=1, column=col_idx, value=header)
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+                    cell.border = thin_border
+
+                # Заполняем данные для каждого товара
+                for i, (_, product) in enumerate(products_df.iterrows()):
+                    row = i + 2  # Начинаем со 2-й строки
+
+                    # Извлекаем данные
+                    article = str(product.get(col_map.get('article', products_df.columns[0]), f"Товар {i+1}"))
+                    price_val = float(product.get(col_map.get('price'), default_price)) if pd.notna(product.get(col_map.get('price'), default_price)) else default_price
+                    cost_val = float(product.get(col_map.get('cost'), default_cost)) if pd.notna(product.get(col_map.get('cost'), default_cost)) else default_cost
+                    weight_val = float(product.get(col_map.get('weight'), default_weight)) if pd.notna(product.get(col_map.get('weight'), default_weight)) else default_weight
+                    length_val = float(product.get(col_map.get('length'), default_length)) if pd.notna(product.get(col_map.get('length'), default_length)) else default_length
+                    width_val = float(product.get(col_map.get('width'), default_width)) if pd.notna(product.get(col_map.get('width'), default_width)) else default_width
+                    height_val = float(product.get(col_map.get('height'), default_height)) if pd.notna(product.get(col_map.get('height'), default_height)) else default_height
+                    volume_val = round(length_val * width_val * height_val / 1000, 2)
+
+                    # Артикул (A)
+                    cell_a = ws.cell(row=row, column=1, value=article)
+                    cell_a.border = thin_border
+                    cell_a.alignment = Alignment(vertical="center")
+
+                    # Цена (B) — ввод
+                    cell_b = ws.cell(row=row, column=2, value=price_val)
+                    cell_b.border = thin_border
+                    cell_b.number_format = '# ##0.00'
+                    cell_b.alignment = Alignment(horizontal="center")
+                    cell_b.fill = input_fill
+
+                    # Себестоимость (C) — ввод
+                    cell_c = ws.cell(row=row, column=3, value=cost_val)
+                    cell_c.border = thin_border
+                    cell_c.number_format = '# ##0.00'
+                    cell_c.alignment = Alignment(horizontal="center")
+                    cell_c.fill = input_fill
+
+                    # Вес (D) — ввод
+                    cell_d = ws.cell(row=row, column=4, value=weight_val)
+                    cell_d.border = thin_border
+                    cell_d.number_format = '0.00'
+                    cell_d.alignment = Alignment(horizontal="center")
+                    cell_d.fill = input_fill
+
+                    # Объём (E) — формула
+                    cell_e = ws.cell(row=row, column=5, value=volume_val)
+                    cell_e.border = thin_border
+                    cell_e.number_format = '0.00'
+                    cell_e.alignment = Alignment(horizontal="center")
+
+                    # Комиссия (F) — формула: Цена * 10%
+                    cell_f = ws.cell(row=row, column=6, value=f"=B{row}*0.10")
+                    cell_f.border = thin_border
+                    cell_f.number_format = '# ##0.00'
+                    cell_f.alignment = Alignment(horizontal="center")
+
+                    # Логистика (G) — формула от веса
+                    cell_g = ws.cell(row=row, column=7,
+                                     value=f"=IF(D{row}<=1,150,IF(D{row}<=5,200,IF(D{row}<=10,300,500)))")
+                    cell_g.border = thin_border
+                    cell_g.number_format = '# ##0.00'
+                    cell_g.alignment = Alignment(horizontal="center")
+
+                    # Хранение (H) — формула от объёма
+                    cell_h = ws.cell(row=row, column=8,
+                                     value=f"=IF(E{row}<=1,30,IF(E{row}<=5,50,IF(E{row}<=10,100,200)))")
+                    cell_h.border = thin_border
+                    cell_h.number_format = '# ##0.00'
+                    cell_h.alignment = Alignment(horizontal="center")
+
+                    # Реклама (I)
+                    cell_i = ws.cell(row=row, column=9, value=100)
+                    cell_i.border = thin_border
+                    cell_i.number_format = '# ##0.00'
+                    cell_i.alignment = Alignment(horizontal="center")
+
+                    # Прочие расходы (J)
+                    cell_j = ws.cell(row=row, column=10, value=50)
+                    cell_j.border = thin_border
+                    cell_j.number_format = '# ##0.00'
+                    cell_j.alignment = Alignment(horizontal="center")
+
+                    # Налог УСН (K) — формула: Цена * 6%
+                    cell_k = ws.cell(row=row, column=11, value=f"=B{row}*0.06")
+                    cell_k.border = thin_border
+                    cell_k.number_format = '# ##0.00'
+                    cell_k.alignment = Alignment(horizontal="center")
+
+                    # ИТОГО РАСХОДЫ (L) — формула: СУММ
+                    cell_l = ws.cell(row=row, column=12, value=f"=SUM(F{row}:K{row})")
+                    cell_l.border = thin_border
+                    cell_l.number_format = '# ##0.00'
+                    cell_l.font = Font(bold=True)
+                    cell_l.alignment = Alignment(horizontal="center")
+                    cell_l.fill = result_fill
+
+                    # МАРЖИНАЛЬНАЯ ПРИБЫЛЬ (M) — формула: Цена - Расходы
+                    cell_m = ws.cell(row=row, column=13, value=f"=B{row}-L{row}")
+                    cell_m.border = thin_border
+                    cell_m.number_format = '# ##0.00'
+                    cell_m.font = Font(bold=True)
+                    cell_m.alignment = Alignment(horizontal="center")
+                    cell_m.fill = result_fill
+
+                    # РЕНТАБЕЛЬНОСТЬ (N) — формула: Прибыль / Цена
+                    cell_n = ws.cell(row=row, column=14, value=f"=IF(B{row}>0,M{row}/B{row},0)")
+                    cell_n.border = thin_border
+                    cell_n.number_format = '0.00%'
+                    cell_n.font = Font(bold=True)
+                    cell_n.alignment = Alignment(horizontal="center")
+                    cell_n.fill = result_fill
+
+                # Ширина столбцов
+                col_widths = [20, 15, 18, 10, 10, 16, 14, 12, 12, 14, 16, 18, 22, 18]
+                for idx, width in enumerate(col_widths, 1):
+                    ws.column_dimensions[get_column_letter(idx)].width = width
+
+                # Фиксируем заголовок
+                ws.freeze_panes = 'A2'
+
+                # Автофильтр
+                ws.auto_filter.ref = f"A1:N{len(products_df) + 1}"
+
+                # Сохраняем
+                wb.save(output)
+                output.seek(0)
+
+                # Результат
+                st.success(f"✅ Юнит-экономика рассчитана для **{len(products_df):,}** товаров!")
+
+                # Статистика
+                total_revenue = products_df[col_map.get('price', products_df.columns[1])].sum() if col_map.get('price') else 0
+                st.metric("Общая выручка (ориентировочно)", f"{total_revenue:,.0f} руб")
+
+                # Скачивание
+                st.download_button(
+                    label=f"📥 Скачать Excel с формулами ({len(products_df):,} товаров)",
+                    data=output.getvalue(),
+                    file_name=f"unit_economy_{len(products_df)}_products.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    width='stretch'
+                )
+
+                st.info("""
+                **💡 Как использовать Excel:**
+                1. Откройте скачанный файл в Excel или Google Sheets
+                2. Измените **Цену** (столбец B), **Себестоимость** (C) или **Вес** (D) — все формулы пересчитаются автоматически!
+                3. Жёлтые ячейки — для ввода данных, зелёные — результаты
+                4. Можно фильтровать и сортировать по любому столбцу
+                5. Добавляйте новые товары внизу — формулы скопируются автоматически (в Excel)
+                """)
+
+                # Предпросмотр первых 10 товаров
+                st.markdown("### 👁️ Предпросмотр (первые 10 товаров)")
+                preview_data = []
+                for i, (_, product) in enumerate(products_df.head(10).iterrows()):
+                    article = str(product.get(col_map.get('article', products_df.columns[0]), f"Товар {i+1}"))
+                    price_val = float(product.get(col_map.get('price'), default_price)) if pd.notna(product.get(col_map.get('price'), default_price)) else default_price
+                    cost_val = float(product.get(col_map.get('cost'), default_cost)) if pd.notna(product.get(col_map.get('cost'), default_cost)) else default_cost
+                    weight_val = float(product.get(col_map.get('weight'), default_weight)) if pd.notna(product.get(col_map.get('weight'), default_weight)) else default_weight
+                    length_val = float(product.get(col_map.get('length'), default_length)) if pd.notna(product.get(col_map.get('length'), default_length)) else default_length
+                    width_val = float(product.get(col_map.get('width'), default_width)) if pd.notna(product.get(col_map.get('width'), default_width)) else default_width
+                    height_val = float(product.get(col_map.get('height'), default_height)) if pd.notna(product.get(col_map.get('height'), default_height)) else default_height
+                    volume_val = round(length_val * width_val * height_val / 1000, 2)
+                    commission = round(price_val * 0.10, 2)
+                    logistics = 150 if weight_val <= 1 else (200 if weight_val <= 5 else (300 if weight_val <= 10 else 500))
+                    storage = 30 if volume_val <= 1 else (50 if volume_val <= 5 else (100 if volume_val <= 10 else 200))
+                    total_expenses = commission + logistics + storage + 100 + 50 + round(price_val * 0.06, 2)
+                    profit = price_val - total_expenses
+                    roi = (profit / price_val * 100) if price_val > 0 else 0
+                    preview_data.append({
+                        "Артикул": article,
+                        "Цена": f"{price_val:,.0f}",
+                        "Прибыль": f"{profit:,.0f}",
+                        "Рент.": f"{roi:.1f}%"
+                    })
+                preview_df = pd.DataFrame(preview_data)
+                st.dataframe(preview_df, width='stretch')
+
+            except Exception as e:
+                st.error(f"❌ Ошибка при обработке файла: {str(e)}")
