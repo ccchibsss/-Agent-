@@ -39,7 +39,6 @@ def initialize_session_state():
         'uploaded_images': {},
         'processed_images': {},
         'image_batch_progress': 0,
-        # Добавляем ключи для полей ввода, чтобы они гарантированно существовали
         'chat_input': "",
         'manual_edit_select': None,
         'ai_edit_select': None,
@@ -84,7 +83,6 @@ def main():
     with st.spinner("Загрузка приложения..."):
         initialize_session_state()
 
-    # Автосохранение
     if st.session_state.workflow:
         save_workflow_auto(st.session_state.workflow)
     if st.session_state.agent_messages:
@@ -106,17 +104,18 @@ def main():
                                 key="api_key_main")
         st.markdown("---")
 
+        # Создаём менеджер агентов, если ещё нет, передавая api_key для возможной загрузки из Google Sheets
         if st.session_state.agent_manager is None:
-            st.session_state.agent_manager = AgentManager()
+            st.session_state.agent_manager = AgentManager(api_key)
         agent_manager = st.session_state.agent_manager
 
-        # Обновляем api_key у существующих менеджеров
+        # Обновляем api_key у менеджеров
         if st.session_state.table_manager:
             st.session_state.table_manager.api_key = api_key
         if st.session_state.image_manager:
             st.session_state.image_manager.api_key = api_key
+        agent_manager.api_key = api_key  # на случай, если ключ изменился
 
-        # Список агентов
         for agent in agent_manager.agents.values():
             is_sel = agent_manager.current_agent_id == agent.id
             cls = "agent-card-selected" if is_sel else ""
@@ -190,7 +189,6 @@ def main():
         st.metric("Загружено изобр.", len(st.session_state.uploaded_images))
         st.metric("Обработано изобр.", len(st.session_state.processed_images))
 
-    # Инициализация менеджеров (если ещё не созданы)
     if st.session_state.table_manager is None:
         st.session_state.table_manager = TableManager(api_key)
     if st.session_state.image_manager is None:
