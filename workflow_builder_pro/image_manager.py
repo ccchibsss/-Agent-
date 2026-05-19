@@ -1,6 +1,5 @@
 """
 Менеджер для массовой обработки изображений с ИИ.
-API‑ключ передаётся непосредственно в методы, работающие с ИИ.
 Все тяжёлые библиотеки импортируются лениво.
 """
 import streamlit as st
@@ -22,7 +21,6 @@ class ImageManager:
         self.total_count = 0
 
     def remove_background(self, image):
-        """Удаляет фон с изображения используя rembg"""
         try:
             from rembg import remove
             from PIL import Image
@@ -35,7 +33,6 @@ class ImageManager:
         return Image.open(BytesIO(output))
 
     def remove_watermark_basic(self, image):
-        """Базовое удаление водяного знака (инпейнтинг)"""
         import numpy as np
         from PIL import Image
         img_array = np.array(image)
@@ -52,7 +49,6 @@ class ImageManager:
         return Image.fromarray(result_array.astype(np.uint8))
 
     def resize_image(self, image, width=None, height=None, maintain_aspect=True):
-        """Изменяет размер изображения"""
         from PIL import Image as PILImage
         if width is None and height is None:
             return image
@@ -72,16 +68,13 @@ class ImageManager:
         return image.resize((new_width, new_height), PILImage.Resampling.LANCZOS)
 
     def crop_image(self, image, left, top, right, bottom):
-        """Обрезает изображение"""
         return image.crop((left, top, right, bottom))
 
     def rotate_image(self, image, angle, expand=True):
-        """Поворачивает изображение"""
         from PIL import Image as PILImage
         return image.rotate(angle, expand=expand, resample=PILImage.Resampling.BICUBIC)
 
     def enhance_image(self, image, brightness=1.0, contrast=1.0, sharpness=1.0):
-        """Улучшает изображение"""
         from PIL import ImageEnhance
         if brightness != 1.0:
             enhancer = ImageEnhance.Brightness(image)
@@ -95,7 +88,6 @@ class ImageManager:
         return image
 
     def apply_filter(self, image, filter_type):
-        """Применяет фильтр к изображению"""
         from PIL import ImageFilter
         filters = {
             'blur': ImageFilter.BLUR, 'sharpen': ImageFilter.SHARPEN,
@@ -109,7 +101,6 @@ class ImageManager:
 
     def add_text_watermark(self, image, text="Watermark", position="bottom-right",
                            font_size=40, opacity=128, color=(255, 255, 255)):
-        """Добавляет текстовый водяной знак"""
         from PIL import Image as PILImage, ImageDraw, ImageFont
         if image.mode != 'RGBA':
             image = image.convert('RGBA')
@@ -135,7 +126,6 @@ class ImageManager:
         return PILImage.alpha_composite(image, txt_layer)
 
     def convert_format(self, image, format="PNG"):
-        """Конвертирует изображение в другой формат"""
         from PIL import Image as PILImage
         if format.upper() in ['JPEG', 'JPG']:
             if image.mode == 'RGBA':
@@ -146,7 +136,6 @@ class ImageManager:
         return image
 
     def ai_edit_image(self, image, instruction, api_key=None):
-        """Возвращает план операций от ИИ (не выполняет их)."""
         from openai import OpenAI
         key = api_key or self.api_key
         if not key:
@@ -178,7 +167,6 @@ class ImageManager:
             return {'error': f'Ошибка ИИ: {str(e)}'}
 
     def apply_ai_edits(self, image, instruction, api_key=None):
-        """Получает инструкцию, отправляет ИИ, получает набор операций и применяет их."""
         plan = self.ai_edit_image(image, instruction, api_key=api_key)
         if 'error' in plan:
             raise RuntimeError(plan['error'])
@@ -193,7 +181,6 @@ class ImageManager:
         return image
 
     def process_batch(self, images, operation, params, progress_callback=None):
-        """Обрабатывает пакет изображений одинаковой операцией."""
         self.total_count = len(images)
         self.processed_count = 0
         results = []
@@ -210,7 +197,6 @@ class ImageManager:
         return results
 
     def batch_ai_edit(self, images, instruction, api_key=None, progress_callback=None):
-        """Применяет ИИ‑инструкцию ко всем изображениям."""
         key = api_key or self.api_key
         if not key:
             raise RuntimeError("API ключ не указан")
@@ -230,7 +216,6 @@ class ImageManager:
         return results
 
     def _apply_operation(self, image, operation, params):
-        """Применяет конкретную операцию к изображению."""
         if operation == ImageEditOperation.REMOVE_BACKGROUND:
             return self.remove_background(image)
         elif operation == ImageEditOperation.REMOVE_WATERMARK:
