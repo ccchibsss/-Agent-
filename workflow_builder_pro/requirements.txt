@@ -1,6 +1,7 @@
 streamlit
 pandas
 openpyxl
+xlrd
 openai
 plotly
 requests
@@ -12,3 +13,5 @@ SpeechRecognition
 gTTS
 gspread
 google-auth
+beautifulsoup4
+lxml
