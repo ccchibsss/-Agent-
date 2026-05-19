@@ -1,6 +1,7 @@
 """
 UI-функции для рендеринга вкладок приложения.
 Добавлены расширенные настройки подключения для Email, Telegram, HTTP.
+Улучшена работа с таблицами: быстрый предпросмотр, сохранение в Google Sheets.
 """
 import streamlit as st
 import pandas as pd
@@ -54,7 +55,6 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
         if st.button("🚀 Отправить", type="primary", use_container_width=True):
             if user_input.strip():
                 st.session_state.agent_messages.append({'role': 'user', 'content': user_input.strip()})
-                # Безопасная очистка поля ввода
                 st.session_state.pop("chat_input", None)
                 with st.spinner("🤖 Агент думает..."):
                     response = current.generate_response(user_input.strip(), api_key, use_training)
@@ -254,7 +254,6 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
         ]
         for name, btype in blocks:
             if st.button(f"{name}", key=f"add_{btype}", use_container_width=True):
-                # Для ИИ Агента при добавлении через общую кнопку задаём agent_id пустым
                 cfg = _default_config(btype)
                 if btype == NodeType.AI_AGENT.value:
                     cfg['agent_id'] = ""
@@ -270,7 +269,6 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
         st.markdown("### 🧠 Агенты")
         for agent in agent_manager.agents.values():
             if st.button(f"🧠 {agent.name}", key=f"wf_agent_{agent.id}", use_container_width=True):
-                # При добавлении конкретного агента agent_id сразу в config
                 st.session_state.workflow.append({
                     "id": len(st.session_state.workflow),
                     "name": f"Агент: {agent.name}",
@@ -339,7 +337,6 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
 
 
 def _default_config(node_type: str) -> dict:
-    """Расширенный дефолтный конфиг с полями подключения."""
     defaults = {
         NodeType.GOOGLE_SHEETS_READ.value: {
             "sheet_url": "", "sheet_name": "", "range_a1": ""
@@ -376,7 +373,7 @@ def _default_config(node_type: str) -> dict:
         },
         NodeType.HTTP_GET.value: {
             "url": "", "headers": "{}", "timeout": 30,
-            "auth_type": "none",  # none, basic, bearer
+            "auth_type": "none",
             "auth_username": "", "auth_password": "",
             "auth_token": ""
         },
@@ -445,7 +442,6 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
                                             type="password", key=f"bot_token_{idx}")
 
     elif btype == NodeType.AI_AGENT.value:
-        # Выбор агента из существующих
         agent_ids = list(agent_manager.agents.keys())
         agent_names = [agent_manager.agents[a].name for a in agent_ids]
         current_agent_id = cfg.get('agent_id', '')
@@ -516,7 +512,7 @@ def _execute_workflow(agent_manager, api_key):
         st.error(f"❌ Ошибка: {result.get('error')}")
 
 
-# ---------- Таблицы + ИИ ----------
+# ---------- Таблицы + ИИ (ускоренная загрузка и запись в Google Sheets) ----------
 def render_tables_tab(api_key: str):
     st.subheader("🗂 Таблицы + ИИ + Редактор")
     table_manager = st.session_state.table_manager
@@ -568,16 +564,18 @@ def render_tables_tab(api_key: str):
                             st.rerun()
         else:
             uploaded = st.file_uploader("Excel или CSV", type=['xlsx', 'xls', 'csv'], key="excel_upload")
+            max_rows = st.slider("Строк для предпросмотра (0 = все)", min_value=0, max_value=10000, value=1000, step=500,
+                                 help="Ограничьте число строк для быстрой загрузки. 0 – загрузить все.")
             if uploaded:
                 with st.spinner("Чтение..."):
                     if uploaded.name.endswith('.csv'):
                         try:
-                            df = pd.read_csv(uploaded)
+                            df = pd.read_csv(uploaded, nrows=max_rows if max_rows > 0 else None)
                         except Exception as e:
                             st.error(f"❌ Ошибка чтения CSV: {e}")
                             df = None
                     else:
-                        df = table_manager.read_excel(uploaded)
+                        df = table_manager.read_excel(uploaded, max_rows=max_rows if max_rows > 0 else None)
                         if df is None:
                             st.error("❌ Файл не является корректным Excel-файлом или повреждён.")
                     if df is not None:
@@ -650,6 +648,25 @@ def render_tables_tab(api_key: str):
                                                 st.error(f"❌ {e}")
                                 else:
                                     st.error(f"❌ {result['error']}")
+            # --- Новые кнопки: запись в Google Sheets ---
+            st.markdown("#### Запись данных обратно в Google Sheets")
+            gsheet_write_url = st.text_input("URL Google Таблицы для записи",
+                                             value=st.session_state.get('last_gsheet_url', ''),
+                                             placeholder="https://docs.google.com/spreadsheets/d/...",
+                                             key="gsheet_write_url")
+            gsheet_sheet_name = st.text_input("Имя листа", value="Sheet1", key="gsheet_write_sheet")
+            if st.button("📤 Записать в Google Sheets", use_container_width=True):
+                if not gsheet_write_url:
+                    st.warning("Введите URL")
+                else:
+                    try:
+                        table_manager.write_google_sheets(st.session_state.current_df, gsheet_write_url, gsheet_sheet_name)
+                        st.success("✅ Данные записаны в Google Sheets!")
+                        st.session_state.last_gsheet_url = gsheet_write_url
+                    except PermissionError as pe:
+                        st.error(f"🔒 Ошибка доступа: {pe}. Убедитесь, что в secrets настроены GSPREAD_CREDENTIALS.")
+                    except Exception as e:
+                        st.error(f"❌ Ошибка записи: {e}")
             st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.info("💡 Загрузите таблицу слева или выберите из сохранённых")
