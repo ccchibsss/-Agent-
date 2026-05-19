@@ -1,6 +1,3 @@
-"""
-Голосовые функции (распознавание и синтез речи).
-"""
 import streamlit as st
 import logging
 from typing import Optional
