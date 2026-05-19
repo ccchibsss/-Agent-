@@ -1,6 +1,5 @@
 """
 Генератор и исполнитель workflow.
-Исправлен поиск agent_id для блока ai_agent.
 """
 import streamlit as st
 import json
@@ -10,7 +9,6 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional, Callable
 import pandas as pd
 import requests
-from openai import OpenAI
 from config import CONFIG
 from utils import NodeType, WorkflowStatus
 from condition_parser import RussianConditionParser
@@ -27,6 +25,7 @@ logger = logging.getLogger(__name__)
 class AIWorkflowGenerator:
     @staticmethod
     def generate(description: str, api_key: str) -> List[Dict]:
+        from openai import OpenAI
         if not api_key:
             return []
         try:
@@ -41,7 +40,7 @@ class AIWorkflowGenerator:
 2. Типы: google_sheets_read, excel_read, deepseek, condition, loop, http_get, http_post,
    email, telegram, ai_agent, data_clean, pivot_table.
 3. Условия на русском.
-4. Для ai_agent в config обязательно указывать agent_id (например, id существующего агента).
+4. Для ai_agent в config обязательно указывать agent_id.
 
 Верни ТОЛЬКО JSON массив.
 """
@@ -146,6 +145,7 @@ class WorkflowExecutor:
         return {'data': df.to_dict('records'), 'rows': len(df), 'columns': list(df.columns)}
 
     def _execute_deepseek(self, config):
+        from openai import OpenAI
         if not self.api_key:
             return {'error': 'API ключ не указан'}
         client = OpenAI(api_key=self.api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
@@ -205,11 +205,10 @@ class WorkflowExecutor:
             try: headers = json.loads(headers)
             except: headers = {}
         auth_type = config.get('auth_type','none')
+        auth = None
         if auth_type == 'basic':
             from requests.auth import HTTPBasicAuth
             auth = HTTPBasicAuth(config.get('auth_username',''), config.get('auth_password',''))
-        else:
-            auth = None
         if auth_type == 'bearer':
             headers['Authorization'] = f"Bearer {config.get('auth_token','')}"
         resp = requests.get(url, headers=headers, auth=auth, timeout=float(config.get('timeout',30)))
@@ -226,11 +225,10 @@ class WorkflowExecutor:
             try: body = json.loads(body)
             except: body = {}
         auth_type = config.get('auth_type','none')
+        auth = None
         if auth_type == 'basic':
             from requests.auth import HTTPBasicAuth
             auth = HTTPBasicAuth(config.get('auth_username',''), config.get('auth_password',''))
-        else:
-            auth = None
         if auth_type == 'bearer':
             headers['Authorization'] = f"Bearer {config.get('auth_token','')}"
         resp = requests.post(url, json=body, headers=headers, auth=auth, timeout=float(config.get('timeout',30)))
