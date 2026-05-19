@@ -2,7 +2,7 @@
 UI-функции для рендеринга вкладок приложения.
 Добавлены расширенные настройки подключения для Email, Telegram, HTTP.
 Улучшена работа с таблицами: быстрый предпросмотр, сохранение в Google Sheets.
-Добавлена вкладка "Экономика" – построение юнит-экономики по ссылке на статью.
+Добавлена вкладка "Экономика" – построение юнит-экономики для маркетплейса.
 """
 import streamlit as st
 import pandas as pd
@@ -668,7 +668,6 @@ def render_tables_tab(api_key: str):
                                                 st.error(f"❌ {e}")
                                 else:
                                     st.error(f"❌ {result['error']}")
-            # Запись в Google Sheets
             st.markdown("#### Запись данных обратно в Google Sheets")
             gsheet_write_url = st.text_input("URL Google Таблицы для записи",
                                              value=st.session_state.get('last_gsheet_url', ''),
@@ -918,91 +917,191 @@ def render_images_tab(api_key: str):
             st.plotly_chart(fig, width='stretch')
 
 
-# ====================== ЭКОНОМИКА ======================
+# ====================== ЭКОНОМИКА (ЮНИТ-ЭКОНОМИКА ДЛЯ МАРКЕТПЛЕЙСА) ======================
 def render_economy_tab(api_key: str):
-    st.subheader("🧠 Экономика – построение модели по статье")
-    st.markdown("Вставьте ссылку на статью с описанием методики (юнит‑экономика, финансовая модель и т.п.), и ИИ создаст готовую таблицу с расчётами.")
+    st.subheader("🧠 Экономика – Юнит-экономика для маркетплейса")
+    st.markdown("""
+    <div class="info-box">
+    <b>Как это работает:</b><br>
+    1. Вставьте ссылку на Google-таблицу с данными (или загрузите свою)<br>
+    2. ИИ автоматически построит юнит-экономику по структуре Яндекс Маркет<br>
+    3. Скачайте готовый Excel с формулами
+    </div>
+    """, unsafe_allow_html=True)
 
-    url = st.text_input("Ссылка на статью", placeholder="https://partner.market.yandex.ru/chtojournal/...")
-    if st.button("📊 Сгенерировать модель", type="primary", width='stretch'):
-        if not url:
-            st.warning("Введите ссылку")
-        elif not api_key:
-            st.error("Введите API-ключ DeepSeek в боковой панели")
-        else:
-            with st.spinner("Читаю страницу и анализирую методику..."):
-                try:
-                    headers = {'User-Agent': 'Mozilla/5.0'}
-                    resp = requests.get(url, headers=headers, timeout=30)
-                    resp.raise_for_status()
-                    soup = BeautifulSoup(resp.text, 'lxml')
-                    for script in soup(["script", "style"]):
-                        script.decompose()
-                    text = soup.get_text(separator='\n')
-                    text = text[:15000]
-                    if not text.strip():
-                        st.error("Не удалось извлечь текст страницы.")
-                        return
-                    client = OpenAI(api_key=api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
-                    prompt = f"""
-Ты эксперт по финансовому моделированию и юнит‑экономике.
-На основе приведённого ниже текста статьи выдели ключевые показатели и формулы.
-Создай Python‑код с использованием pandas, который строит таблицу юнит‑экономики.
+    source = st.radio("Источник данных", ["Google Sheets (образец)", "Загрузить Excel/CSV", "Создать пустой шаблон"], key="econ_source")
+    
+    df = None
+    table_manager = st.session_state.table_manager
+
+    if source == "Google Sheets (образец)":
+        gs_url = st.text_input(
+            "URL Google Таблицы",
+            value="https://docs.google.com/spreadsheets/d/1KwHE161o0G6BJsz3LfaN2LBnJ3OJyEcOZzKtK5e0TOI/edit?gid=1679952747#gid=1679952747",
+            key="econ_gs_url"
+        )
+        if st.button("📊 Загрузить таблицу", width='stretch'):
+            if gs_url:
+                with st.spinner("Загрузка..."):
+                    df = table_manager.read_google_sheets(gs_url)
+                    if df is not None:
+                        st.session_state.econ_df = df
+                        st.success(f"✅ Загружено: {df.shape}")
+                        st.rerun()
+    
+    elif source == "Загрузить Excel/CSV":
+        uploaded = st.file_uploader("Excel или CSV", type=['xlsx', 'xls', 'csv'], key="econ_upload")
+        if uploaded:
+            with st.spinner("Чтение..."):
+                if uploaded.name.endswith('.csv'):
+                    df = pd.read_csv(uploaded)
+                else:
+                    df = table_manager.read_excel(uploaded)
+                if df is not None:
+                    st.session_state.econ_df = df
+                    st.success(f"✅ Загружено: {df.shape}")
+                    st.rerun()
+    
+    elif source == "Создать пустой шаблон":
+        if st.button("📋 Создать шаблон", width='stretch'):
+            template_data = {
+                "Показатель": [
+                    "Цена товара (Ц)",
+                    "Себестоимость (С)",
+                    "Комиссия маркетплейса",
+                    "Логистика",
+                    "Хранение",
+                    "Реклама",
+                    "Прочие расходы",
+                    "Налог (УСН 6%)",
+                    "",
+                    "Итого расходы",
+                    "Маржинальная прибыль",
+                    "Рентабельность",
+                ],
+                "Значение": [2000, 800, 200, 150, 50, 100, 50, 0, "", 0, 0, ""],
+                "Формула": [
+                    "", "", "Ц * 10%", "", "", "", "", "Ц * 6%", "",
+                    "С + Комиссия + Логистика + Хранение + Реклама + Прочие + Налог",
+                    "Ц - Итого расходы",
+                    "Маржинальная прибыль / Ц * 100"
+                ],
+                "Результат": ["", "", "", "", "", "", "", "", "", "", "", ""]
+            }
+            df = pd.DataFrame(template_data)
+            st.session_state.econ_df = df
+            st.success("✅ Шаблон создан!")
+            st.rerun()
+    
+    if 'econ_df' in st.session_state and st.session_state.econ_df is not None:
+        df = st.session_state.econ_df
+        st.markdown("### 📊 Исходные данные")
+        st.dataframe(df, width='stretch')
+
+    if df is not None:
+        st.markdown("---")
+        st.markdown("### 🤖 Построить юнит-экономику")
+        
+        description = st.text_area(
+            "Опишите дополнительные параметры (необязательно)",
+            placeholder="Например: цена товара 2000 руб, себестоимость 800 руб, комиссия 10%, логистика 150 руб...",
+            height=80,
+            key="econ_description"
+        )
+        
+        if st.button("🚀 Рассчитать юнит-экономику", type="primary", width='stretch'):
+            if not api_key:
+                st.error("Введите API-ключ DeepSeek в боковой панели")
+            else:
+                with st.spinner("ИИ анализирует данные и строит модель..."):
+                    try:
+                        df_text = df.to_string() if df is not None else ""
+                        
+                        client = OpenAI(api_key=api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
+                        prompt = f"""
+Ты эксперт по юнит-экономике для маркетплейсов (Яндекс Маркет, Ozon, Wildberries).
+
+На основе предоставленной таблицы создай Python-код, который:
+1. Берёт за основу структуру таблицы (показатели и значения)
+2. Заполняет ВСЕ формулы и рассчитывает результаты
+3. Вычисляет итоговые показатели:
+   - Итого расходы = сумма всех расходов
+   - Маржинальная прибыль = Цена - Итого расходы
+   - Рентабельность = Маржинальная прибыль / Цена * 100%
+
+Формулы для расчёта:
+- Комиссия = Цена * процент_комиссии (обычно 5-15%)
+- Налог УСН = Цена * 0.06 (для УСН 6%)
+- Итого расходы = Себестоимость + Комиссия + Логистика + Хранение + Реклама + Прочие + Налог
+- Маржинальная прибыль = Цена - Итого расходы
+- Рентабельность = (Маржинальная прибыль / Цена) * 100
+
 Код должен:
-- Создать DataFrame с названиями показателей (строками) и их значениями для примера.
-- Добавить столбцы "Формула" (текст формулы) и "Результат" (рассчитанное значение).
-- В конце вывести итоговые показатели (прибыль с единицы, маржинальность и т.д.).
-- Код должен быть безопасным и выполняться в песочнице.
-Верни ТОЛЬКО код на Python, без пояснений, в блоке ```python.
+- Создать DataFrame с колонками: Показатель, Значение, Формула, Результат
+- Заполнить ВСЕ строки данными и формулами
+- Рассчитать все результаты
+- Вывести итоговую таблицу в переменную df
 
-Текст статьи:
-{text}
+ДАННЫЕ ТАБЛИЦЫ:
+{df_text}
+
+ДОПОЛНИТЕЛЬНЫЕ ПАРАМЕТРЫ:
+{description if description else "Использовать стандартные значения"}
+
+Верни ТОЛЬКО код Python в блоке ```python, без пояснений.
 """
-                    response = client.chat.completions.create(
-                        model=CONFIG.DEEPSEEK_MODEL,
-                        messages=[{"role": "system", "content": "Ты финансовый аналитик. Возвращай только код Python."},
-                                  {"role": "user", "content": prompt}],
-                        temperature=0.2,
-                        timeout=CONFIG.API_TIMEOUT,
-                        max_tokens=CONFIG.MAX_TOKENS
-                    )
-                    code = response.choices[0].message.content
-                    if "```python" in code:
-                        code = code.split("```python", 1)[1].split("```", 1)[0]
-                    elif "```" in code:
-                        code = code.split("```", 1)[1].split("```", 1)[0]
-                    code = code.strip()
-                    if not code.startswith("import") and not code.startswith("from") and not code.startswith("df"):
-                        st.error("Не удалось получить корректный код от ИИ.")
-                        st.code(code, language='python')
-                        return
-                    local_vars = {}
-                    exec(code, {"pd": pd, "np": __import__('numpy')}, local_vars)
-                    df = local_vars.get('df')
-                    if df is None:
-                        for var in local_vars.values():
-                            if isinstance(var, pd.DataFrame):
-                                df = var
-                                break
-                    if df is None:
-                        st.error("Код не создал DataFrame.")
-                        st.code(code, language='python')
-                        return
-                    st.success("✅ Модель построена!")
-                    st.dataframe(df, width='stretch')
-                    output = BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df.to_excel(writer, index=False, sheet_name='Юнит-экономика')
-                    st.download_button(
-                        label="📥 Скачать Excel",
-                        data=output.getvalue(),
-                        file_name="unit_economy.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                    st.markdown("### 📐 Сгенерированный код")
-                    st.code(code, language='python')
-                except Exception as e:
-                    st.error(f"❌ Ошибка: {e}")
+                        response = client.chat.completions.create(
+                            model=CONFIG.DEEPSEEK_MODEL,
+                            messages=[{"role": "system", "content": "Ты эксперт по финансовому моделированию. Возвращай только код Python."},
+                                      {"role": "user", "content": prompt}],
+                            temperature=0.2,
+                            timeout=CONFIG.API_TIMEOUT,
+                            max_tokens=CONFIG.MAX_TOKENS
+                        )
+                        
+                        code = response.choices[0].message.content
+                        
+                        if "```python" in code:
+                            code = code.split("```python", 1)[1].split("```", 1)[0]
+                        elif "```" in code:
+                            code = code.split("```", 1)[1].split("```", 1)[0]
+                        code = code.strip()
+                        
+                        local_vars = {}
+                        exec(code, {"pd": pd, "np": __import__('numpy')}, local_vars)
+                        
+                        result_df = local_vars.get('df')
+                        if result_df is None:
+                            for var in local_vars.values():
+                                if isinstance(var, pd.DataFrame):
+                                    result_df = var
+                                    break
+                        
+                        if result_df is None:
+                            st.error("Код не создал DataFrame. Проверьте сгенерированный код:")
+                            st.code(code, language='python')
+                        else:
+                            st.success("✅ Юнит-экономика рассчитана!")
+                            
+                            st.markdown("### 📊 Юнит-экономика")
+                            st.dataframe(result_df, width='stretch')
+                            
+                            output = BytesIO()
+                            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                                result_df.to_excel(writer, index=False, sheet_name='Юнит-экономика')
+                            st.download_button(
+                                label="📥 Скачать Excel с формулами",
+                                data=output.getvalue(),
+                                file_name="unit_economy_marketplace.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                width='stretch'
+                            )
+                            
+                            with st.expander("📐 Сгенерированный код Python"):
+                                st.code(code, language='python')
+                    
+                    except Exception as e:
+                        st.error(f"❌ Ошибка: {str(e)}")
 
 
 def render_help_tab():
