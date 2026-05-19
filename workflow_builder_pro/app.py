@@ -15,7 +15,8 @@ from image_manager import ImageManager
 from ui_components import (
     render_chat_tab, render_training_tab, render_memory_tab,
     render_analytics_tab, render_workflow_tab, render_conditions_tab,
-    render_tables_tab, render_images_tab, render_help_tab
+    render_tables_tab, render_images_tab, render_help_tab,
+    render_economy_tab
 )
 import shutil
 
@@ -93,7 +94,7 @@ def main():
     st.markdown(f"""
     <div class="main-header">
         <h1>{CONFIG.APP_ICON} WORKFLOW BUILDER PRO v{CONFIG.APP_VERSION}</h1>
-        <p>Обучаемые ИИ агенты | Таблицы | Изображения | Голос | Мобильная версия</p>
+        <p>Обучаемые ИИ агенты | Таблицы | Изображения | Голос | Экономика</p>
         <span class="version-badge">Монопоточная версия • {datetime.now().strftime('%Y')}</span>
     </div>""", unsafe_allow_html=True)
 
@@ -104,17 +105,15 @@ def main():
                                 key="api_key_main")
         st.markdown("---")
 
-        # Создаём менеджер агентов, если ещё нет, передавая api_key для возможной загрузки из Google Sheets
         if st.session_state.agent_manager is None:
             st.session_state.agent_manager = AgentManager(api_key)
         agent_manager = st.session_state.agent_manager
 
-        # Обновляем api_key у менеджеров
         if st.session_state.table_manager:
             st.session_state.table_manager.api_key = api_key
         if st.session_state.image_manager:
             st.session_state.image_manager.api_key = api_key
-        agent_manager.api_key = api_key  # на случай, если ключ изменился
+        agent_manager.api_key = api_key
 
         for agent in agent_manager.agents.values():
             is_sel = agent_manager.current_agent_id == agent.id
@@ -196,7 +195,8 @@ def main():
 
     tabs = st.tabs([
         "💬 Диалог", "📚 Обучение", "🧠 Память", "📊 Аналитика",
-        "🤖 Workflow", "🔀 Условия", "🗂 Таблицы+ИИ", "🖼️ Изображения", "📖 Справка"
+        "🤖 Workflow", "🔀 Условия", "🗂 Таблицы+ИИ", "🧠 Экономика",
+        "🖼️ Изображения", "📖 Справка"
     ])
 
     with tabs[0]:
@@ -214,8 +214,10 @@ def main():
     with tabs[6]:
         render_tables_tab(api_key)
     with tabs[7]:
-        render_images_tab(api_key)
+        render_economy_tab(api_key)
     with tabs[8]:
+        render_images_tab(api_key)
+    with tabs[9]:
         render_help_tab()
 
 
