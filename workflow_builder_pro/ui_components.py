@@ -34,7 +34,7 @@ except ImportError:
     BS_AVAILABLE = False
 
 
-# ====================== ОБЩИЕ ВКЛАДКИ (без изменений) ======================
+# ====================== ЧАТ ======================
 def render_chat_tab(agent_manager: AgentManager, api_key: str):
     current = agent_manager.get_current_agent()
     if not current:
@@ -53,17 +53,17 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
     with col1:
         use_training = st.checkbox("📚 Обуч.", value=True, key="chat_use_training")
     with col2:
-        if st.button("🎤", use_container_width=True, help="Голосовой ввод"):
+        if st.button("🎤", width='stretch', help="Голосовой ввод"):
             st.session_state.voice_show_upload = True
     with col3:
-        if st.button("🔊", use_container_width=True, help="Озвучить последний ответ"):
+        if st.button("🔊", width='stretch', help="Озвучить последний ответ"):
             msgs = st.session_state.agent_messages
             if msgs and msgs[-1]['role'] == 'agent':
                 audio = text_to_speech_mp3(msgs[-1]['content'])
                 if audio:
                     st.audio(audio, format="audio/mp3")
     with col4:
-        if st.button("🚀 Отправить", type="primary", use_container_width=True):
+        if st.button("🚀 Отправить", type="primary", width='stretch'):
             if user_input.strip():
                 st.session_state.agent_messages.append({'role': 'user', 'content': user_input.strip()})
                 st.session_state.pop("chat_input", None)
@@ -100,12 +100,13 @@ def render_chat_tab(agent_manager: AgentManager, api_key: str):
                 else:
                     st.error("Не удалось распознать речь")
 
-    if st.button("🗑️ Очистить диалог", use_container_width=True):
+    if st.button("🗑️ Очистить диалог", width='stretch'):
         st.session_state.agent_messages = []
         save_messages_auto([])
         st.rerun()
 
 
+# ====================== ОБУЧЕНИЕ ======================
 def render_training_tab(agent_manager: AgentManager):
     current = agent_manager.get_current_agent()
     if not current:
@@ -155,6 +156,7 @@ def render_training_tab(agent_manager: AgentManager):
                 st.warning("Не найдено примеров в формате Вопрос -> Ответ")
 
 
+# ====================== ПАМЯТЬ ======================
 def render_memory_tab(agent_manager: AgentManager):
     current = agent_manager.get_current_agent()
     if not current:
@@ -192,6 +194,7 @@ def render_memory_tab(agent_manager: AgentManager):
         st.rerun()
 
 
+# ====================== АНАЛИТИКА ======================
 def render_analytics_tab(agent_manager: AgentManager):
     current = agent_manager.get_current_agent()
     if not current:
@@ -199,16 +202,19 @@ def render_analytics_tab(agent_manager: AgentManager):
         return
     st.subheader(f"📊 {current.name}")
     c1, c2, c3, c4 = st.columns(4)
-    with c1: st.markdown(f'<div class="stat-card"><h3>{current.stats["total_trainings"]}</h3><p>Обучений</p></div>', unsafe_allow_html=True)
-    with c2: st.markdown(f'<div class="stat-card"><h3>{current.stats["total_conversations"]}</h3><p>Диалогов</p></div>', unsafe_allow_html=True)
-    with c3: st.markdown(f'<div class="stat-card"><h3>{current.stats["success_rate"]:.0f}%</h3><p>Успешность</p></div>', unsafe_allow_html=True)
+    with c1:
+        st.markdown(f'<div class="stat-card"><h3>{current.stats["total_trainings"]}</h3><p>Обучений</p></div>', unsafe_allow_html=True)
+    with c2:
+        st.markdown(f'<div class="stat-card"><h3>{current.stats["total_conversations"]}</h3><p>Диалогов</p></div>', unsafe_allow_html=True)
+    with c3:
+        st.markdown(f'<div class="stat-card"><h3>{current.stats["success_rate"]:.0f}%</h3><p>Успешность</p></div>', unsafe_allow_html=True)
     with c4:
         total = len(current.training_examples) + len(current.memory)
         st.markdown(f'<div class="stat-card"><h3>{total}</h3><p>Фактов</p></div>', unsafe_allow_html=True)
     if current.training_examples:
         df = pd.DataFrame([{'Дата': ex['timestamp'][:10], 'Пример': i + 1} for i, ex in enumerate(current.training_examples)])
         fig = px.line(df, x='Дата', y='Пример', title="Прогресс обучения")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
     if current.conversation_history:
         st.subheader("💬 Последние диалоги")
         for conv in current.conversation_history[-5:]:
@@ -217,6 +223,7 @@ def render_analytics_tab(agent_manager: AgentManager):
                 st.markdown(f"**🤖** {conv['agent'][:200]}")
 
 
+# ====================== УСЛОВИЯ ======================
 def render_conditions_tab():
     st.subheader("🔀 Русские условия")
     st.markdown("""
@@ -234,15 +241,17 @@ def render_conditions_tab():
         if test:
             parsed = RussianConditionParser.parse(test)
             col_a, col_b = st.columns(2)
-            with col_a: st.metric("Тип", parsed.get('type'))
-            with col_b: st.metric("Уверенность", f"{parsed.get('confidence', 0) * 100:.0f}%")
+            with col_a:
+                st.metric("Тип", parsed.get('type'))
+            with col_b:
+                st.metric("Уверенность", f"{parsed.get('confidence', 0) * 100:.0f}%")
             if parsed.get('code'):
                 st.success(f"💻 `{parsed['code']}`")
             else:
                 st.warning("Не распознано")
 
 
-# ---------- Workflow (расширенный) ----------
+# ====================== WORKFLOW ======================
 def render_workflow_tab(agent_manager: AgentManager, api_key: str):
     st.subheader("🤖 Конструктор Workflow")
     col1, col2 = st.columns([1, 2])
@@ -264,7 +273,7 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
             ("📤 HTTP POST", NodeType.HTTP_POST.value),
         ]
         for name, btype in blocks:
-            if st.button(f"{name}", key=f"add_{btype}", use_container_width=True):
+            if st.button(f"{name}", key=f"add_{btype}", width='stretch'):
                 cfg = _default_config(btype)
                 if btype == NodeType.AI_AGENT.value:
                     cfg['agent_id'] = ""
@@ -279,7 +288,7 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
 
         st.markdown("### 🧠 Агенты")
         for agent in agent_manager.agents.values():
-            if st.button(f"🧠 {agent.name}", key=f"wf_agent_{agent.id}", use_container_width=True):
+            if st.button(f"🧠 {agent.name}", key=f"wf_agent_{agent.id}", width='stretch'):
                 st.session_state.workflow.append({
                     "id": len(st.session_state.workflow),
                     "name": f"Агент: {agent.name}",
@@ -297,7 +306,7 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
         st.markdown("### 🪄 ИИ-генератор")
         desc = st.text_area("Опишите workflow на русском", height=100,
                             placeholder="Пример: прочитай Google таблицу, если цена больше 1000 отправь email")
-        if st.button("✨ Сгенерировать Workflow", use_container_width=True):
+        if st.button("✨ Сгенерировать Workflow", width='stretch'):
             if desc and api_key:
                 with st.spinner("ИИ создаёт workflow..."):
                     generated = AIWorkflowGenerator.generate(desc, api_key)
@@ -338,10 +347,10 @@ def render_workflow_tab(agent_manager: AgentManager, api_key: str):
             st.markdown("---")
             col_act1, col_act2 = st.columns(2)
             with col_act1:
-                if st.button("🚀 ЗАПУСТИТЬ WORKFLOW", type="primary", use_container_width=True):
+                if st.button("🚀 ЗАПУСТИТЬ WORKFLOW", type="primary", width='stretch'):
                     _execute_workflow(agent_manager, api_key)
             with col_act2:
-                if st.button("🗑️ Очистить весь workflow", use_container_width=True):
+                if st.button("🗑️ Очистить весь workflow", width='stretch'):
                     st.session_state.workflow = []
                     save_workflow_auto([])
                     st.rerun()
@@ -487,7 +496,7 @@ def _render_block_config(block: dict, idx: int, agent_manager: AgentManager):
             cfg['body'] = st.text_area("Тело запроса (JSON)", cfg.get('body', '{}'), height=80, key=f"post_body_{idx}")
         st.markdown("#### Аутентификация")
         auth = st.selectbox("Тип", ["none", "basic", "bearer"],
-                           index=["none","basic","bearer"].index(cfg.get('auth_type','none')),
+                           index=["none", "basic", "bearer"].index(cfg.get('auth_type', 'none')),
                            key=f"http_auth_{idx}")
         cfg['auth_type'] = auth
         if auth == "basic":
@@ -523,7 +532,7 @@ def _execute_workflow(agent_manager, api_key):
         st.error(f"❌ Ошибка: {result.get('error')}")
 
 
-# ---------- Таблицы + ИИ (ускоренная загрузка и запись в Google Sheets) ----------
+# ====================== ТАБЛИЦЫ + ИИ ======================
 def render_tables_tab(api_key: str):
     st.subheader("🗂 Таблицы + ИИ + Редактор")
     table_manager = st.session_state.table_manager
@@ -533,10 +542,10 @@ def render_tables_tab(api_key: str):
         else:
             for table_id, df in st.session_state.saved_tables.items():
                 with st.expander(f"📊 {table_id} ({df.shape[0]}×{df.shape[1]})", expanded=False):
-                    st.dataframe(df.head(5), use_container_width=True)
+                    st.dataframe(df.head(5), width='stretch')
                     col_a, col_b, col_c = st.columns(3)
                     with col_a:
-                        if st.button("✏️ Открыть", key=f"open_{table_id}", use_container_width=True):
+                        if st.button("✏️ Открыть", key=f"open_{table_id}", width='stretch'):
                             st.session_state.current_df = df.copy()
                             st.session_state.editing_table_id = table_id
                             st.rerun()
@@ -545,9 +554,9 @@ def render_tables_tab(api_key: str):
                             table_manager.write_excel(df, tmp.name)
                             with open(tmp.name, 'rb') as f:
                                 st.download_button("📥 Скачать", f, f"{table_id}.xlsx",
-                                                   key=f"dl_saved_{table_id}", use_container_width=True)
+                                                   key=f"dl_saved_{table_id}", width='stretch')
                     with col_c:
-                        if st.button("🗑️ Удалить", key=f"del_saved_{table_id}", use_container_width=True):
+                        if st.button("🗑️ Удалить", key=f"del_saved_{table_id}", width='stretch'):
                             del st.session_state.saved_tables[table_id]
                             save_tables_auto(st.session_state.saved_tables)
                             if st.session_state.editing_table_id == table_id:
@@ -561,7 +570,7 @@ def render_tables_tab(api_key: str):
         source = st.radio("Источник", ["Google Sheets", "Excel"], key="table_source")
         if source == "Google Sheets":
             url = st.text_input("URL", placeholder="https://docs.google.com/spreadsheets/d/...", key="gs_url_input")
-            if st.button("📊 Загрузить из Google", use_container_width=True):
+            if st.button("📊 Загрузить из Google", width='stretch'):
                 if url:
                     with st.spinner("Загрузка..."):
                         df = table_manager.read_google_sheets(url)
@@ -604,12 +613,12 @@ def render_tables_tab(api_key: str):
             st.caption(f"{st.session_state.current_df.shape[0]} строк × {st.session_state.current_df.shape[1]} столбцов")
             c_save, c_del, c_dl, c_ai = st.columns(4)
             with c_save:
-                if st.button("💾 Сохранить", key=f"save_{st.session_state.editing_table_id}", use_container_width=True):
+                if st.button("💾 Сохранить", key=f"save_{st.session_state.editing_table_id}", width='stretch'):
                     st.session_state.saved_tables[st.session_state.editing_table_id] = st.session_state.current_df.copy()
                     save_tables_auto(st.session_state.saved_tables)
                     st.success("✅")
             with c_del:
-                if st.button("🗑️ Удалить", key=f"delete_{st.session_state.editing_table_id}", use_container_width=True):
+                if st.button("🗑️ Удалить", key=f"delete_{st.session_state.editing_table_id}", width='stretch'):
                     if st.session_state.editing_table_id in st.session_state.saved_tables:
                         del st.session_state.saved_tables[st.session_state.editing_table_id]
                         save_tables_auto(st.session_state.saved_tables)
@@ -621,12 +630,12 @@ def render_tables_tab(api_key: str):
                     table_manager.write_excel(st.session_state.current_df, tmp.name)
                     with open(tmp.name, 'rb') as f:
                         st.download_button("📥 Excel", f, file_name=f"{st.session_state.editing_table_id}.xlsx",
-                                           key=f"dl_{st.session_state.editing_table_id}", use_container_width=True)
+                                           key=f"dl_{st.session_state.editing_table_id}", width='stretch')
             with c_ai:
-                if st.button("🤖 ИИ", key=f"ai_{st.session_state.editing_table_id}", use_container_width=True):
+                if st.button("🤖 ИИ", key=f"ai_{st.session_state.editing_table_id}", width='stretch'):
                     st.session_state.table_edit_mode = True
             edited = st.data_editor(st.session_state.current_df, num_rows="dynamic",
-                                    use_container_width=True, key=f"editor_{st.session_state.editing_table_id}",
+                                    width='stretch', key=f"editor_{st.session_state.editing_table_id}",
                                     hide_index=True)
             if not st.session_state.current_df.equals(edited):
                 st.session_state.current_df = edited
@@ -666,7 +675,7 @@ def render_tables_tab(api_key: str):
                                              placeholder="https://docs.google.com/spreadsheets/d/...",
                                              key="gsheet_write_url")
             gsheet_sheet_name = st.text_input("Имя листа", value="Sheet1", key="gsheet_write_sheet")
-            if st.button("📤 Записать в Google Sheets", use_container_width=True):
+            if st.button("📤 Записать в Google Sheets", width='stretch'):
                 if not gsheet_write_url:
                     st.warning("Введите URL")
                 else:
@@ -683,7 +692,7 @@ def render_tables_tab(api_key: str):
             st.info("💡 Загрузите таблицу слева или выберите из сохранённых")
 
 
-# ---------- Изображения (с ИИ-редактированием) ----------
+# ====================== ИЗОБРАЖЕНИЯ ======================
 def render_images_tab(api_key: str):
     st.subheader("🖼️ Редактор изображений с ИИ")
     image_manager = st.session_state.image_manager
@@ -719,7 +728,7 @@ def render_images_tab(api_key: str):
                 cols = st.columns(3)
                 for idx, (fn, img) in enumerate(list(st.session_state.uploaded_images.items())[:6]):
                     with cols[idx % 3]:
-                        st.image(img, caption=f"{fn} ({img.size[0]}x{img.size[1]})", use_container_width=True)
+                        st.image(img, caption=f"{fn} ({img.size[0]}x{img.size[1]})", width='stretch')
 
     with tabs[1]:
         st.markdown("### ✏️ Ручное редактирование")
@@ -731,7 +740,7 @@ def render_images_tab(api_key: str):
                 original = st.session_state.uploaded_images[selected]
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.image(original, use_container_width=True, caption="Оригинал")
+                    st.image(original, width='stretch', caption="Оригинал")
                 with col2:
                     op = st.selectbox("Операция", [e.value for e in ImageEditOperation],
                                       format_func=lambda x: {
@@ -764,7 +773,7 @@ def render_images_tab(api_key: str):
                             processed = image_manager._apply_operation(original, ImageEditOperation(op), params)
                             st.session_state.processed_images[f"manual_{selected}"] = processed
                             st.success("✅ Обработано!")
-                            st.image(processed, caption="Результат", use_container_width=True)
+                            st.image(processed, caption="Результат", width='stretch')
                         except Exception as e:
                             st.error(f"❌ {e}")
 
@@ -776,10 +785,10 @@ def render_images_tab(api_key: str):
             selected_ai = st.selectbox("Изображение для ИИ", list(st.session_state.uploaded_images.keys()), key="ai_edit_select")
             if selected_ai:
                 img = st.session_state.uploaded_images[selected_ai]
-                st.image(img, caption="Исходное изображение", use_container_width=True)
+                st.image(img, caption="Исходное изображение", width='stretch')
                 instruction = st.text_area("Что нужно сделать?", placeholder="Пример: удали фон, поверни на 45 градусов, сделай черно-белым и добавь водяной знак 'Фото'",
                                            height=80, key="ai_instruction")
-                if st.button("🤖 Обработать с ИИ", type="primary", use_container_width=True):
+                if st.button("🤖 Обработать с ИИ", type="primary", width='stretch'):
                     if not instruction.strip():
                         st.warning("Введите инструкцию")
                     elif not api_key:
@@ -790,7 +799,7 @@ def render_images_tab(api_key: str):
                                 processed_ai = image_manager.apply_ai_edits(img, instruction, api_key=api_key)
                                 st.session_state.processed_images[f"ai_{selected_ai}"] = processed_ai
                                 st.success("✅ ИИ‑редактирование выполнено!")
-                                st.image(processed_ai, caption="Результат ИИ", use_container_width=True)
+                                st.image(processed_ai, caption="Результат ИИ", width='stretch')
                             except Exception as e:
                                 st.error(f"❌ Ошибка ИИ‑редактирования: {e}")
 
@@ -842,7 +851,7 @@ def render_images_tab(api_key: str):
             instruction_mass = st.text_area("Единая инструкция для всех изображений",
                                             placeholder="Пример: удали фон и добавь водяной знак 'Мой бренд'",
                                             height=80, key="mass_ai_instruction")
-            if st.button("🤖 Применить ко всем", type="primary", use_container_width=True):
+            if st.button("🤖 Применить ко всем", type="primary", width='stretch'):
                 if not instruction_mass.strip():
                     st.warning("Введите инструкцию")
                 elif not api_key:
@@ -874,7 +883,7 @@ def render_images_tab(api_key: str):
             cols = st.columns(3)
             for idx, (fn, img) in enumerate(st.session_state.processed_images.items()):
                 with cols[idx % 3]:
-                    st.image(img, caption=fn, use_container_width=True)
+                    st.image(img, caption=fn, width='stretch')
                     cs, cd, cx = st.columns(3)
                     with cs:
                         if st.button("💾", key=f"save_res_{idx}"): img.save(IMAGES_DIR / fn); st.success("✅")
@@ -883,7 +892,7 @@ def render_images_tab(api_key: str):
                         st.download_button("📥", buf, fn, "image/png", key=f"dl_res_{idx}")
                     with cx:
                         if st.button("🗑️", key=f"del_res_{idx}"): del st.session_state.processed_images[fn]; st.rerun()
-            if st.button("💾 Сохранить все в папку", use_container_width=True):
+            if st.button("💾 Сохранить все в папку", width='stretch'):
                 for fn, img in st.session_state.processed_images.items():
                     if img: img.save(IMAGES_DIR / fn)
                 st.success(f"Сохранено в {IMAGES_DIR}")
@@ -906,16 +915,16 @@ def render_images_tab(api_key: str):
                 fmt_counts[ext] = fmt_counts.get(ext, 0) + 1
             df_fmt = pd.DataFrame({'Формат': list(fmt_counts.keys()), 'Количество': list(fmt_counts.values())})
             fig = px.pie(df_fmt, values='Количество', names='Формат', title="По форматам")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
 
 
-# ====================== НОВАЯ ВКЛАДКА "ЭКОНОМИКА" ======================
+# ====================== ЭКОНОМИКА ======================
 def render_economy_tab(api_key: str):
     st.subheader("🧠 Экономика – построение модели по статье")
     st.markdown("Вставьте ссылку на статью с описанием методики (юнит‑экономика, финансовая модель и т.п.), и ИИ создаст готовую таблицу с расчётами.")
 
     url = st.text_input("Ссылка на статью", placeholder="https://partner.market.yandex.ru/chtojournal/...")
-    if st.button("📊 Сгенерировать модель", type="primary", use_container_width=True):
+    if st.button("📊 Сгенерировать модель", type="primary", width='stretch'):
         if not url:
             st.warning("Введите ссылку")
         elif not api_key:
@@ -923,21 +932,17 @@ def render_economy_tab(api_key: str):
         else:
             with st.spinner("Читаю страницу и анализирую методику..."):
                 try:
-                    # 1. Загружаем HTML
                     headers = {'User-Agent': 'Mozilla/5.0'}
                     resp = requests.get(url, headers=headers, timeout=30)
                     resp.raise_for_status()
                     soup = BeautifulSoup(resp.text, 'lxml')
-                    # Удаляем скрипты и стили
                     for script in soup(["script", "style"]):
                         script.decompose()
                     text = soup.get_text(separator='\n')
-                    # Ограничим объём текста (первые 15000 символов)
                     text = text[:15000]
                     if not text.strip():
                         st.error("Не удалось извлечь текст страницы.")
                         return
-                    # 2. Отправляем ИИ
                     client = OpenAI(api_key=api_key, base_url=CONFIG.DEEPSEEK_BASE_URL)
                     prompt = f"""
 Ты эксперт по финансовому моделированию и юнит‑экономике.
@@ -962,7 +967,6 @@ def render_economy_tab(api_key: str):
                         max_tokens=CONFIG.MAX_TOKENS
                     )
                     code = response.choices[0].message.content
-                    # Извлекаем код из ответа
                     if "```python" in code:
                         code = code.split("```python", 1)[1].split("```", 1)[0]
                     elif "```" in code:
@@ -972,12 +976,10 @@ def render_economy_tab(api_key: str):
                         st.error("Не удалось получить корректный код от ИИ.")
                         st.code(code, language='python')
                         return
-                    # 3. Выполняем код в песочнице
                     local_vars = {}
                     exec(code, {"pd": pd, "np": __import__('numpy')}, local_vars)
                     df = local_vars.get('df')
                     if df is None:
-                        # Попробуем найти любой DataFrame
                         for var in local_vars.values():
                             if isinstance(var, pd.DataFrame):
                                 df = var
@@ -986,10 +988,8 @@ def render_economy_tab(api_key: str):
                         st.error("Код не создал DataFrame.")
                         st.code(code, language='python')
                         return
-                    # 4. Показываем результат
                     st.success("✅ Модель построена!")
-                    st.dataframe(df, use_container_width=True)
-                    # Кнопка скачать Excel
+                    st.dataframe(df, width='stretch')
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         df.to_excel(writer, index=False, sheet_name='Юнит-экономика')
