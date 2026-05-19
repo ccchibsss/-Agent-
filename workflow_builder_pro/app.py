@@ -120,7 +120,7 @@ def main():
             cls = "agent-card-selected" if is_sel else ""
             col1, col2 = st.columns([4, 1])
             with col1:
-                if st.button(f"📋 {agent.name}", key=f"select_{agent.id}", use_container_width=True):
+                if st.button(f"📋 {agent.name}", key=f"select_{agent.id}", width='stretch'):
                     agent_manager.set_current_agent(agent.id)
                     st.rerun()
             with col2:
@@ -134,7 +134,7 @@ def main():
             name = st.text_input("Имя", placeholder="Мой Помощник", key="new_agent_name")
             role = st.text_input("Роль", placeholder="эксперт по...", key="new_agent_role")
             prompt = st.text_area("Промпт", height=80, key="new_agent_prompt")
-            if st.button("✨ Создать", use_container_width=True, key="create_agent_btn"):
+            if st.button("✨ Создать", width='stretch', key="create_agent_btn"):
                 if name and role and prompt:
                     agent_manager.add_agent(name, role, prompt)
                     st.success(f"✅ Агент {name} создан!")
@@ -159,15 +159,15 @@ def main():
         st.markdown("---")
 
         with st.expander("🗑️ Управление данными", expanded=False):
-            if st.button("🔄 Сбросить workflow", use_container_width=True):
+            if st.button("🔄 Сбросить workflow", width='stretch'):
                 st.session_state.workflow = []
                 save_workflow_auto([])
                 st.rerun()
-            if st.button("🗑️ Очистить чат", use_container_width=True):
+            if st.button("🗑️ Очистить чат", width='stretch'):
                 st.session_state.agent_messages = []
                 save_messages_auto([])
                 st.rerun()
-            if st.button("⚠️ Сбросить ВСЁ", use_container_width=True, type="secondary"):
+            if st.button("⚠️ Сбросить ВСЁ", width='stretch', type="secondary"):
                 for f in [WORKFLOW_FILE, AGENTS_FILE, MESSAGES_FILE, HISTORY_FILE, TABLES_FILE, IMAGES_METADATA_FILE]:
                     if f.exists():
                         f.unlink()
