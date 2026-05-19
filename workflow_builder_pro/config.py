@@ -5,13 +5,9 @@ from dataclasses import dataclass, field
 from typing import Dict, Tuple
 from pathlib import Path
 
-# ============================================================================
-# АВТОСОХРАНЕНИЕ ДАННЫХ (без ручного экспорта/импорта)
-# ============================================================================
 DATA_DIR = Path(__file__).parent / ".workflow_data"
 DATA_DIR.mkdir(exist_ok=True)
 
-# Папка для сохраненных изображений
 IMAGES_DIR = DATA_DIR / "processed_images"
 IMAGES_DIR.mkdir(exist_ok=True)
 
@@ -25,37 +21,24 @@ IMAGES_METADATA_FILE = DATA_DIR / "images_metadata.json"
 
 @dataclass
 class AppConfig:
-    """Глобальная конфигурация приложения"""
     APP_TITLE: str = "Workflow Builder Pro – Голосовой помощник"
     APP_ICON: str = "🧠"
     APP_VERSION: str = "9.2.0"
-    
-    # API настройки
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
     DEEPSEEK_MODEL: str = "deepseek-chat"
     API_TIMEOUT: int = 120
     MAX_TOKENS: int = 4096
-    
-    # Настройки таблиц
     MAX_ROWS_GOOGLE: int = 10000
     MAX_ROWS_EXCEL: int = 100000
     SUPPORTED_EXCEL_FORMATS: Tuple[str, ...] = ("xlsx", "xlsm", "xls")
     DEFAULT_SHEET_NAME: str = "Sheet1"
-    
-    # Настройки изображений
     MAX_IMAGE_UPLOAD: int = 10000
     SUPPORTED_IMAGE_FORMATS: Tuple[str, ...] = ("jpg", "jpeg", "png", "webp", "bmp", "gif")
     MAX_IMAGE_SIZE_MB: int = 50
-    
-    # Настройки кэширования
     CACHE_TTL_SECONDS: int = 300
-    
-    # Настройки интерфейса
     DEFAULT_LANGUAGE: str = "ru"
     MOBILE_BREAKPOINT: int = 768
     ITEMS_PER_PAGE: int = 10
-    
-    # Цветовая схема
     COLORS: Dict[str, str] = field(default_factory=lambda: {
         'primary': '#6974dc',
         'primary_dark': '#764ba2',
@@ -67,6 +50,8 @@ class AppConfig:
         'dark_bg_2': '#16213e',
         'card_bg': '#ffffff'
     })
+    # Новая опция: URL Google Sheets для хранения агентов (облачное постоянство)
+    AGENTS_GSHEET_URL: str = ""   # если заполнить, агенты будут сохраняться в Google-таблице
 
 
 CONFIG = AppConfig()
