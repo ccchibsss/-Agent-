@@ -1,11 +1,6 @@
-"""
-CSS стили приложения.
-"""
-
 def get_app_styles() -> str:
     return """
     <style>
-        /* ========== БАЗОВЫЕ СТИЛИ ========== */
         :root {
             --primary-gradient: linear-gradient(135deg, #6974dc 0%, #764ba2 100%);
             --dark-gradient: linear-gradient(135deg, #ffffff 0%, #f0f2f6 100%);
@@ -21,58 +16,35 @@ def get_app_styles() -> str:
             --border-dark: #e0e0e0;
             --block-bg: #ffffff;
         }
-        
         body, .stApp, .main, .block-container {
             color: var(--text-on-light) !important;
             background-color: #f0f2f6 !important;
         }
-        
         p, span, div, li, a, label, h1, h2, h3, h4, h5, h6 {
             color: var(--text-on-light) !important;
         }
-        
         strong, b {
             color: var(--text-on-light) !important;
             font-weight: 600 !important;
         }
-        
         small, .caption {
             color: var(--text-secondary) !important;
         }
-        
-        /* ========== ПОЛЯ ВВОДА ========== */
-        .stTextInput input,
-        .stTextArea textarea,
-        .stNumberInput input,
-        .stSelectbox select,
-        .stMultiselect select,
-        input[type="text"],
-        input[type="number"],
-        input[type="password"],
-        textarea {
+        .stTextInput input, .stTextArea textarea, .stNumberInput input, .stSelectbox select, .stMultiselect select, input[type="text"], input[type="number"], input[type="password"], textarea {
             color: #000000 !important;
             background-color: #ffffff !important;
             border: none !important;
             border-radius: 12px !important;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
         }
-        
-        .stTextInput input::placeholder,
-        .stTextArea textarea::placeholder,
-        input::placeholder,
-        textarea::placeholder {
+        .stTextInput input::placeholder, .stTextArea textarea::placeholder, input::placeholder, textarea::placeholder {
             color: #888888 !important;
             opacity: 1 !important;
         }
-        
-        .stTextInput input:focus,
-        .stTextArea textarea:focus,
-        input:focus,
-        textarea:focus {
+        .stTextInput input:focus, .stTextArea textarea:focus, input:focus, textarea:focus {
             box-shadow: 0 2px 12px rgba(105, 116, 220, 0.3) !important;
             outline: none !important;
         }
-        
         .stMarkdown p, .stMarkdown div, .stMarkdown span, .stMarkdown label {
             color: #000000 !important;
         }
@@ -90,8 +62,6 @@ def get_app_styles() -> str:
         .stChatMessage p, .stChatMessage div, .stChatMessage span {
             color: #000000 !important;
         }
-        
-        /* ========== ЭЛЕМЕНТЫ УПРАВЛЕНИЯ ========== */
         .stButton button {
             border-radius: 12px !important; 
             font-weight: 600 !important;
@@ -106,11 +76,7 @@ def get_app_styles() -> str:
             box-shadow: 0 4px 12px rgba(0,0,0,0.12) !important;
             background-color: #f8f9fa !important;
         }
-        .stButton button:active {
-            transform: scale(0.98);
-        }
-        
-        /* ========== БОКОВАЯ ПАНЕЛЬ ========== */
+        .stButton button:active { transform: scale(0.98); }
         [data-testid="stSidebar"] {
             background-color: #ffffff !important;
             border: none !important;
@@ -126,9 +92,7 @@ def get_app_styles() -> str:
             background-color: #f0f2f6 !important;
             box-shadow: 0 4px 12px rgba(0,0,0,0.12) !important;
         }
-        [data-testid="stSidebar"] p,
-        [data-testid="stSidebar"] span,
-        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label,
         [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3,
         [data-testid="stSidebar"] h4, [data-testid="stSidebar"] h5, [data-testid="stSidebar"] h6,
         [data-testid="stSidebar"] div {
@@ -144,8 +108,6 @@ def get_app_styles() -> str:
             color: #000000 !important;
             font-weight: 600 !important;
         }
-        
-        /* ========== ЗАГОЛОВОК ========== */
         .main-header {
             background: var(--primary-gradient);
             padding: 2rem;
@@ -181,8 +143,6 @@ def get_app_styles() -> str:
             color: white !important;
             border: none !important;
         }
-        
-        /* ========== КАРТОЧКИ АГЕНТОВ ========== */
         .agent-card {
             background: #ffffff !important;
             border-radius: 15px; padding: 1rem; margin: 0.5rem 0;
@@ -210,8 +170,6 @@ def get_app_styles() -> str:
             box-shadow: 0 0 20px rgba(0, 255, 136, 0.15);
             border-left: 4px solid var(--success-color) !important;
         }
-        
-        /* ========== СТАТИСТИКА ========== */
         .stat-card {
             background: #ffffff !important;
             padding: 1.2rem; border-radius: 15px; text-align: center;
@@ -225,8 +183,6 @@ def get_app_styles() -> str:
         }
         .stat-card h3 { margin: 0; font-size: 2rem; color: #6974dc !important; }
         .stat-card p { margin: 0.3rem 0 0 0; opacity: 0.9; color: #4a4a6a !important; }
-        
-        /* ========== БЛОКИ ПАМЯТИ И УСЛОВИЙ ========== */
         .memory-box, .condition-box, .info-box {
             background: #ffffff !important;
             padding: 1rem; border-radius: 12px; margin: 0.5rem 0;
@@ -239,8 +195,6 @@ def get_app_styles() -> str:
             font-family: 'Courier New', monospace;
         }
         .info-box { border-left: 4px solid var(--accent-color) !important; }
-        
-        /* ========== УЗЛЫ WORKFLOW ========== */
         .workflow-node {
             background: #ffffff !important;
             border-radius: 15px; padding: 1rem; margin: 0.5rem 0;
@@ -258,8 +212,6 @@ def get_app_styles() -> str:
             text-align: center; font-size: 1.2rem; color: var(--accent-color);
             margin: 0.3rem 0;
         }
-        
-        /* ========== EXPANDER ========== */
         div[data-testid="stExpander"] details {
             background: #ffffff !important;
             border-radius: 12px; border: none !important;
@@ -267,8 +219,6 @@ def get_app_styles() -> str:
             box-shadow: 0 2px 8px rgba(0,0,0,0.06) !important;
         }
         div[data-testid="stExpander"] summary { color: #000000 !important; }
-        
-        /* ========== ЧАТ ========== */
         .chat-message-user {
             background: linear-gradient(135deg, #6974dc, #764ba2);
             color: white !important; padding: 0.8rem 1.2rem;
@@ -286,8 +236,6 @@ def get_app_styles() -> str:
             padding: 1rem 0; border-bottom: 1px solid #e0e0e0;
             z-index: 100; margin-bottom: 1rem;
         }
-        
-        /* ========== АДАПТИВ ========== */
         @media (max-width: 768px) {
             .main-header h1 { font-size: 1.8rem !important; }
             div[data-testid="column"] { flex: 1 1 100% !important; }
