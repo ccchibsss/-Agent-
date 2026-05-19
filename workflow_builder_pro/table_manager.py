@@ -1,16 +1,13 @@
 """
-Менеджер для работы с таблицами (Google Sheets, Excel).
+Менеджер для работы с таблицами (Google Sheets, Excel, CSV).
 Поддерживает .xlsx, .xlsm, .xls (через xlrd), .csv.
-Добавлены:
-- max_rows для быстрой предзагрузки Excel
-- запись в Google Sheets через gspread
+Исправлена ошибка с writer.sheet_names в Pandas 3.x.
 """
 import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
-from openai import OpenAI
 from io import BytesIO
 import logging
 import re
@@ -18,31 +15,6 @@ import json
 from config import CONFIG
 from utils import handle_errors, cache_result
 import os
-
-try:
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
-    from openpyxl.utils import get_column_letter
-    from openpyxl.chart import BarChart, LineChart, PieChart
-    EXCEL_SUPPORT = True
-except ImportError:
-    EXCEL_SUPPORT = False
-    openpyxl = None
-
-try:
-    import xlrd
-    XLRD_SUPPORT = True
-except ImportError:
-    XLRD_SUPPORT = False
-    xlrd = None
-
-try:
-    import gspread
-    from google.oauth2.service_account import Credentials
-    GSHEETS_WRITE_SUPPORT = True
-except ImportError:
-    GSHEETS_WRITE_SUPPORT = False
-    gspread = None
 
 logger = logging.getLogger(__name__)
 
@@ -87,10 +59,6 @@ class TableManager:
     def read_excel(self, file_path: Union[str, BytesIO], sheet_name: Optional[Union[str, int]] = 0,
                    range_a1: Optional[str] = None, use_cache: bool = True,
                    max_rows: Optional[int] = None) -> Optional[pd.DataFrame]:
-        """Читает Excel, можно ограничить число строк для ускорения предпросмотра."""
-        if not EXCEL_SUPPORT:
-            raise ImportError("Установите openpyxl: pip install openpyxl")
-
         ext = ""
         if isinstance(file_path, str):
             ext = os.path.splitext(file_path)[1].lower()
@@ -98,7 +66,6 @@ class TableManager:
             name = getattr(file_path, 'name', '')
             ext = os.path.splitext(name)[1].lower() if name else ''
 
-        # Параметры для pd.read_excel
         kwargs = {'sheet_name': sheet_name}
         if range_a1:
             kwargs['usecols'] = range_a1
@@ -106,11 +73,16 @@ class TableManager:
             kwargs['nrows'] = max_rows
 
         try:
+            import openpyxl
             df = pd.read_excel(file_path, engine='openpyxl', **kwargs)
         except Exception as e:
-            if XLRD_SUPPORT and ext == '.xls':
-                logger.info("Попытка чтения .xls через xlrd")
-                df = pd.read_excel(file_path, engine='xlrd', **kwargs)
+            if ext == '.xls':
+                try:
+                    import xlrd
+                    df = pd.read_excel(file_path, engine='xlrd', **kwargs)
+                except ImportError:
+                    logger.error("Установите xlrd: pip install xlrd")
+                    return None
             else:
                 logger.error(f"Ошибка чтения Excel: {e}")
                 return None
@@ -127,16 +99,16 @@ class TableManager:
     @handle_errors(default_return=False)
     def write_excel(self, df: pd.DataFrame, output_path: str, sheet_name: str = 'Sheet1',
                     apply_formatting: bool = True, formatting_rules: Optional[Dict] = None) -> bool:
-        if not EXCEL_SUPPORT:
-            raise ImportError("Требуется openpyxl")
+        import openpyxl
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
             df.to_excel(writer, sheet_name=sheet_name, index=False)
             if apply_formatting:
-                self._apply_excel_formatting(writer, df, formatting_rules)
+                self._apply_excel_formatting(writer, df, sheet_name, formatting_rules)
         return True
 
-    def _apply_excel_formatting(self, writer, df, rules):
-        worksheet = writer.sheets[writer.sheet_names[0]]
+    def _apply_excel_formatting(self, writer, df, sheet_name, rules):
+        from openpyxl.styles import Font, PatternFill, Alignment
+        worksheet = writer.sheets[sheet_name]
         for column in worksheet.columns:
             max_length = max((len(str(cell.value)) if cell.value else 0) for cell in column)
             col_letter = column[0].column_letter
@@ -161,6 +133,7 @@ class TableManager:
                     self._apply_conditional_format(worksheet, col_idx, len(df) + 1, condition, format_config)
 
     def _apply_conditional_format(self, worksheet, col_idx, max_row, condition, format_config):
+        from openpyxl.styles import PatternFill
         fill_color = format_config.get('color', 'FFEB3B')
         for row in range(2, max_row + 1):
             cell = worksheet.cell(row=row, column=col_idx)
@@ -172,6 +145,7 @@ class TableManager:
 
     @cache_result()
     def ai_analyze_dataframe(self, df: pd.DataFrame, instruction: str, api_key: str) -> Dict[str, Any]:
+        from openai import OpenAI
         if not api_key:
             return {'error': 'API ключ не указан'}
         df_summary = {
@@ -247,46 +221,27 @@ class TableManager:
             logger.error(f"Ошибка выполнения: {e}")
             raise
 
-    def write_google_sheets(self, df: pd.DataFrame, url: str, sheet_name: str = 'Sheet1',
-                            mode: str = 'overwrite') -> bool:
-        """
-        Записывает DataFrame в Google Sheets.
-        Требует настроенных секретов Streamlit: GSPREAD_CREDENTIALS (словарь ключей сервисного аккаунта).
-        mode: 'overwrite' - замена всего листа, 'append' - добавление в конец (пока не реализовано).
-        """
-        if not GSHEETS_WRITE_SUPPORT:
-            raise ImportError("Установите gspread: pip install gspread")
-
+    def write_google_sheets(self, df: pd.DataFrame, url: str, sheet_name: str = 'Sheet1') -> bool:
+        import gspread
+        from google.oauth2.service_account import Credentials
         creds_dict = None
-        # Пробуем загрузить из secrets
         try:
             creds_dict = st.secrets["GSPREAD_CREDENTIALS"]
             if isinstance(creds_dict, str):
                 creds_dict = json.loads(creds_dict)
         except KeyError:
             pass
-
         if not creds_dict:
             raise PermissionError("Не настроены GSPREAD_CREDENTIALS в секретах приложения.")
-
+        credentials = Credentials.from_service_account_info(creds_dict)
+        client = gspread.authorize(credentials)
+        sheet_id = url.split('/d/')[1].split('/')[0] if '/d/' in url else url
+        spreadsheet = client.open_by_key(sheet_id)
         try:
-            credentials = Credentials.from_service_account_info(creds_dict)
-            client = gspread.authorize(credentials)
-            # Извлекаем ID таблицы из URL
-            sheet_id = url.split('/d/')[1].split('/')[0] if '/d/' in url else url
-            spreadsheet = client.open_by_key(sheet_id)
-            try:
-                worksheet = spreadsheet.worksheet(sheet_name)
-            except gspread.WorksheetNotFound:
-                worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="20")
-
-            # Очищаем лист и вставляем данные
-            worksheet.clear()
-            # Подготавливаем список списков
-            data = [df.columns.tolist()] + df.values.tolist()
-            worksheet.update(data)
-            logger.info(f"Данные успешно записаны в Google Sheets: {sheet_name}")
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка записи в Google Sheets: {e}")
-            raise
+            worksheet = spreadsheet.worksheet(sheet_name)
+        except gspread.WorksheetNotFound:
+            worksheet = spreadsheet.add_worksheet(title=sheet_name, rows="100", cols="20")
+        worksheet.clear()
+        data = [df.columns.tolist()] + df.values.tolist()
+        worksheet.update(data)
+        return True
